@@ -11,16 +11,16 @@ export type ModifierKind =
 export interface Modifier {
   id: string;
   kind: ModifierKind;
-  /** Raw numeric value (positive = adds to initiative, negative = subtracts).
-   *  For dex_reaction the UI stores the bonus as a positive number and the
-   *  combat engine subtracts it, matching AD&D 2e convention. */
+  /** Raw numeric value added directly to the initiative total.
+   *  Positive = slower (adds to total); negative = faster (subtracts from total).
+   *  For dex_reaction, a negative value means better DEX (acts sooner). */
   value: number;
   label: string;
 }
 
 // -- Combatant ----------------------------------------------------------------
 
-export type CombatantType = 'player' | 'monster' | 'npc';
+export type CombatantType = 'player' | 'monster';
 
 export interface Combatant {
   id: string;
@@ -54,8 +54,6 @@ export interface AppState {
   combatants: Combatant[];
   roundNumber: number;
   currentSegment: number;
-  /** 0 means no surprise round. */
-  surpriseSegments: number;
   /** Whether we are currently resolving the surprise phase. */
   inSurprisePhase: boolean;
 }

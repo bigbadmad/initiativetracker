@@ -73,7 +73,7 @@ export function renderTracker(): HTMLElement {
   // Acting-now callout
   if (actingNow.length > 0) {
     const callout = el('div', { cls: 'acting-callout' });
-    callout.appendChild(el('p', { cls: 'callout-label', text: `Segment ${currentSegment}: Acting:` }));
+    callout.appendChild(el('p', { cls: 'callout-label', text: `Segment ${currentSegment} - Acting` }));
     actingNow.forEach((c) => {
       const nameSpan = el('span', { cls: `callout-name type-${c.type}`, text: c.name });
       callout.appendChild(nameSpan);

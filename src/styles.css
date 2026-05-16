@@ -236,6 +236,56 @@ label {
 .combatant-row.type-monster { border-left: 3px solid var(--red); }
 .combatant-row.type-npc     { border-left: 3px solid var(--purple); }
 
+/* Surprised combatant row */
+.combatant-row.is-surprised-row { background: #1e1a00; border-color: #6a5500; }
+
+/* Wrap pairs the row with its optional inline edit panel */
+.combatant-row-wrap { display: flex; flex-direction: column; }
+
+/* Right-side controls (surprised toggle + edit btn + remove btn) */
+.combatant-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* Pencil edit icon button */
+.btn-icon {
+  padding: 3px 7px;
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1;
+}
+.btn-icon:hover { border-color: var(--amber-dim); color: var(--amber); }
+.btn-icon-active { border-color: var(--amber-dim); color: var(--amber); background: #1a1500; }
+
+/* Inline edit panel */
+.edit-panel {
+  background: var(--bg-card-alt);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 var(--radius) var(--radius);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.edit-fields-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.edit-field-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 160px;
+}
+.edit-field-group label { display: inline; margin: 0; white-space: nowrap; }
+.edit-field-group input { flex: 1; }
+.edit-mod-section { display: flex; flex-direction: column; gap: 4px; }
+
 .combatant-info {
   flex: 1;
   display: flex;
@@ -302,6 +352,7 @@ label {
 }
 .mod-form select,
 .mod-form input { flex: 1; min-width: 80px; }
+.mod-form select { min-width: 140px; }
 .btn-add-mod { flex-shrink: 0; padding: 6px 12px; }
 
 /* Surprise section */
@@ -614,7 +665,7 @@ label {
   font-size: 0.85rem;
   padding: 4px 8px;
 }
-.action-kind-select { max-width: 140px; }
+.action-kind-select { max-width: 160px; }
 .card-other-mods {
   font-size: 0.75rem;
   color: var(--text-muted);

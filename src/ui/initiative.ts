@@ -213,7 +213,7 @@ function buildInitiativeCard(c: Combatant, inSurprisePhase: boolean): HTMLElemen
     const parts = bgMods.map((m) => {
       if (m.kind === 'haste') return `${m.label} (\u00f72)`;
       if (m.kind === 'slow') return `${m.label} (+10)`;
-      return `${m.label} ${fmtSign(-m.value)}`;
+      return `${m.label} ${fmtSign(m.value)}`;
     });
     card.appendChild(el('p', { cls: 'card-other-mods', text: parts.join(' \u00b7 ') }));
   }

@@ -8,7 +8,6 @@ const initialState: AppState = {
   combatants: [],
   roundNumber: 1,
   currentSegment: 1,
-  surpriseSegments: 0,
   inSurprisePhase: false,
 };
 
@@ -137,7 +136,6 @@ export function beginInitiativePhase(): void {
     ...state,
     phase: 'initiative',
     inSurprisePhase: hasSurprise,
-    surpriseSegments: hasSurprise ? 1 : 0,
     roundNumber: hasSurprise ? 0 : 1,
     combatants: withAutoRolledMonsters(state.combatants),
   };

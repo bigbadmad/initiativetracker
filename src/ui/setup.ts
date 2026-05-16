@@ -3,6 +3,7 @@ import {
   addCombatant,
   removeCombatant,
   updateCombatant,
+  updateCombatantSilent,
   getState,
   beginInitiativePhase,
 } from '../state.ts';
@@ -81,10 +82,19 @@ export function renderSetup(): HTMLElement {
   return root;
 }
 
+// -- Track which combatant has its edit panel open ----------------------------
+
+let editingCombatantId: string | null = null;
+
 // -- Combatant row in the setup list ------------------------------------------
 
 function buildCombatantRow(c: Combatant, onUpdate: () => void): HTMLElement {
-  const row = el('div', { cls: ['combatant-row', `type-${c.type}`] });
+  const isEditing = c.id === editingCombatantId;
+  const wrapper = el('div', { cls: 'combatant-row-wrap' });
+
+  const mainRow = el('div', {
+    cls: ['combatant-row', `type-${c.type}`, c.isSurprised ? 'is-surprised-row' : ''],
+  });
 
   const info = el('div', { cls: 'combatant-info' });
   info.appendChild(el('span', { cls: 'combatant-name', text: c.name }));
@@ -93,41 +103,158 @@ function buildCombatantRow(c: Combatant, onUpdate: () => void): HTMLElement {
   if (c.maxHp !== null) {
     info.appendChild(el('span', { cls: 'badge badge-hp', text: `HP: ${c.maxHp}` }));
   }
+  if (c.isSurprised) {
+    info.appendChild(el('span', { cls: 'badge badge-surprised', text: 'Surprised' }));
+  }
 
   const modChips = el('div', { cls: 'mod-chips' });
-  if (c.modifiers.length > 0) {
-    c.modifiers.forEach((m) => {
-      const label = VALUELESS_KINDS.includes(m.kind)
-        ? m.label
-        : `${m.label}: ${fmtSign(m.kind === 'dex_reaction' ? -m.value : m.value)}`;
-      modChips.appendChild(chip(label, `mod-${m.kind}`));
-    });
-  }
+  c.modifiers.forEach((m) => {
+    const label = VALUELESS_KINDS.includes(m.kind)
+      ? m.label
+      : `${m.label}: ${fmtSign(m.value)}`;
+    modChips.appendChild(chip(label, `mod-${m.kind}`));
+  });
   info.appendChild(modChips);
 
-  row.appendChild(info);
+  mainRow.appendChild(info);
 
-  // Surprised toggle
+  // Right-side controls
+  const controls = el('div', { cls: 'combatant-controls' });
+
   const surpriseLabel = el('label', { cls: 'surprise-toggle' });
   const surpriseCheck = el('input', { attrs: { type: 'checkbox' } });
   (surpriseCheck as HTMLInputElement).checked = c.isSurprised;
   surpriseCheck.addEventListener('change', () => {
     updateCombatant(c.id, { isSurprised: (surpriseCheck as HTMLInputElement).checked });
-    onUpdate();
   });
   surpriseLabel.appendChild(surpriseCheck);
   surpriseLabel.appendChild(document.createTextNode(' Surprised'));
-  row.appendChild(surpriseLabel);
+  controls.appendChild(surpriseLabel);
 
-  // Remove button
-  row.appendChild(
-    btn('✕', 'btn btn-remove', () => {
-      removeCombatant(c.id);
+  controls.appendChild(
+    btn('✏', `btn btn-icon${isEditing ? ' btn-icon-active' : ''}`, () => {
+      editingCombatantId = isEditing ? null : c.id;
       onUpdate();
     }),
   );
 
-  return row;
+  controls.appendChild(
+    btn('✕', 'btn btn-remove', () => {
+      editingCombatantId = null;
+      removeCombatant(c.id);
+    }),
+  );
+
+  mainRow.appendChild(controls);
+  wrapper.appendChild(mainRow);
+
+  if (isEditing) {
+    wrapper.appendChild(buildEditPanel(c));
+  }
+
+  return wrapper;
+}
+
+// -- Inline edit panel --------------------------------------------------------
+
+function buildEditPanel(c: Combatant): HTMLElement {
+  const panel = el('div', { cls: 'edit-panel' });
+
+  // Name + HP fields
+  const fieldsRow = el('div', { cls: 'edit-fields-row' });
+
+  const nameGroup = el('div', { cls: 'edit-field-group' });
+  nameGroup.appendChild(el('label', { text: 'Name' }));
+  const nameInput = el('input', {
+    attrs: { type: 'text', value: c.name, placeholder: 'Name' },
+  }) as HTMLInputElement;
+  nameInput.addEventListener('input', () => {
+    updateCombatantSilent(c.id, { name: nameInput.value });
+  });
+  nameGroup.appendChild(nameInput);
+  fieldsRow.appendChild(nameGroup);
+
+  if (c.maxHp !== null) {
+    const hpGroup = el('div', { cls: 'edit-field-group' });
+    hpGroup.appendChild(el('label', { text: 'Max HP' }));
+    const hpInput = el('input', {
+      attrs: { type: 'number', min: '1', value: String(c.maxHp), placeholder: 'Max HP' },
+    }) as HTMLInputElement;
+    hpInput.addEventListener('change', () => {
+      const hp = parseInt(hpInput.value, 10);
+      if (!isNaN(hp) && hp > 0) {
+        updateCombatant(c.id, {
+          maxHp: hp,
+          currentHp: c.currentHp !== null ? Math.min(c.currentHp, hp) : hp,
+        });
+      }
+    });
+    hpGroup.appendChild(hpInput);
+    fieldsRow.appendChild(hpGroup);
+  }
+
+  panel.appendChild(fieldsRow);
+
+  // Modifiers
+  const modSection = el('div', { cls: 'edit-mod-section' });
+  modSection.appendChild(el('p', { cls: 'form-label', text: 'Modifiers:' }));
+
+  const modList = el('div', { cls: 'mod-list' });
+  c.modifiers.forEach((m) => {
+    const modRow = el('div', { cls: 'mod-row' });
+    const desc = VALUELESS_KINDS.includes(m.kind)
+      ? m.label
+      : `${m.label}: ${fmtSign(m.value)}`;
+    modRow.appendChild(el('span', { text: desc }));
+    modRow.appendChild(
+      btn('✕', 'btn btn-remove-sm', () => {
+        updateCombatant(c.id, { modifiers: c.modifiers.filter((x) => x.id !== m.id) });
+      }),
+    );
+    modList.appendChild(modRow);
+  });
+  modSection.appendChild(modList);
+
+  const addModForm = el('div', { cls: 'mod-form' });
+
+  const epKindSelect = el('select', { cls: 'mod-kind-select' }) as HTMLSelectElement;
+  (Object.keys(MOD_KIND_LABELS) as ModifierKind[]).forEach((k) => {
+    epKindSelect.appendChild(el('option', { text: MOD_KIND_LABELS[k], attrs: { value: k } }));
+  });
+
+  const epLabelInput = el('input', {
+    attrs: { type: 'text', placeholder: 'Label (e.g. Long Sword)' },
+  }) as HTMLInputElement;
+
+  const epValueInput = el('input', {
+    attrs: { type: 'number', placeholder: 'Value', min: '-20', max: '20' },
+  }) as HTMLInputElement;
+  epValueInput.value = '0';
+
+  function updateValVis() {
+    epValueInput.style.display = VALUELESS_KINDS.includes(epKindSelect.value as ModifierKind) ? 'none' : '';
+  }
+  epKindSelect.addEventListener('change', updateValVis);
+  updateValVis();
+
+  addModForm.append(
+    epKindSelect,
+    epLabelInput,
+    epValueInput,
+    btn('+', 'btn btn-secondary btn-add-mod', () => {
+      const kind = epKindSelect.value as ModifierKind;
+      const label = epLabelInput.value.trim() || MOD_KIND_LABELS[kind];
+      const value = VALUELESS_KINDS.includes(kind) ? 0 : parseInt(epValueInput.value, 10) || 0;
+      updateCombatant(c.id, {
+        modifiers: [...c.modifiers, { id: uid(), kind, value, label }],
+      });
+    }),
+  );
+
+  modSection.appendChild(addModForm);
+  panel.appendChild(modSection);
+
+  return panel;
 }
 
 // -- Add-combatant form --------------------------------------------------------
@@ -175,7 +302,7 @@ function buildAddForm(type: CombatantType, onAdd: () => void): HTMLElement {
       const row = el('div', { cls: 'mod-row' });
       const desc = VALUELESS_KINDS.includes(m.kind)
         ? m.label
-        : `${m.label}: ${fmtSign(m.kind === 'dex_reaction' ? -m.value : m.value)}`;
+        : `${m.label}: ${fmtSign(m.value)}`;
       row.appendChild(el('span', { text: desc }));
       row.appendChild(
         btn('✕', 'btn btn-remove-sm', () => {
