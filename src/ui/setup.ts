@@ -1,14 +1,14 @@
-import type { Combatant, CombatantType, Modifier, ModifierKind } from '../types.ts';
+﻿import type { Combatant, CombatantType, Modifier, ModifierKind } from '../types.ts';
 import {
   addCombatant,
   removeCombatant,
-  setState,
   updateCombatant,
   getState,
+  beginInitiativePhase,
 } from '../state.ts';
-import { el, btn, uid, chip } from './components.ts';
+import { el, btn, uid, chip, fmtSign } from './components.ts';
 
-// ── Modifier form data ────────────────────────────────────────────────────────
+// -- Modifier form data --------------------------------------------------------
 
 const MOD_KIND_LABELS: Record<ModifierKind, string> = {
   weapon_speed: 'Weapon Speed',
@@ -22,7 +22,7 @@ const MOD_KIND_LABELS: Record<ModifierKind, string> = {
 // Kinds that have no numeric value (they're flags)
 const VALUELESS_KINDS: ModifierKind[] = ['haste', 'slow'];
 
-// ── Build the setup screen ────────────────────────────────────────────────────
+// -- Build the setup screen ----------------------------------------------------
 
 export function renderSetup(): HTMLElement {
   const root = el('div', { cls: 'screen setup-screen' });
@@ -36,7 +36,7 @@ export function renderSetup(): HTMLElement {
   const body = el('div', { cls: 'setup-body' });
   root.appendChild(body);
 
-  // ── Combatant list ──────────────────────────────────────────────────────────
+  // -- Combatant list ----------------------------------------------------------
   const listSection = el('section', { cls: 'combatant-list-section' });
   body.appendChild(listSection);
 
@@ -60,35 +60,28 @@ export function renderSetup(): HTMLElement {
   }
   refreshList();
 
-  // ── Add combatant forms ─────────────────────────────────────────────────────
+  // -- Add combatant forms -----------------------------------------------------
   const formsRow = el('div', { cls: 'add-forms-row' });
   body.appendChild(formsRow);
 
   formsRow.appendChild(buildAddForm('player', refreshList));
   formsRow.appendChild(buildAddForm('monster', refreshList));
 
-  // ── Surprise section ────────────────────────────────────────────────────────
-  const surpriseSection = buildSurpriseSection();
-  body.appendChild(surpriseSection);
-
-  // ── Start button ────────────────────────────────────────────────────────────
+  // -- Start button ------------------------------------------------------------
   const startBtn = btn('Start Encounter →', 'btn btn-primary btn-start', () => {
-    const { combatants, surpriseSegments } = getState();
+    const { combatants } = getState();
     if (combatants.length < 2) {
       alert('Add at least 2 combatants before starting.');
       return;
     }
-    setState({
-      phase: 'initiative',
-      inSurprisePhase: surpriseSegments > 0,
-    });
+    beginInitiativePhase();
   });
   body.appendChild(startBtn);
 
   return root;
 }
 
-// ── Combatant row in the setup list ──────────────────────────────────────────
+// -- Combatant row in the setup list ------------------------------------------
 
 function buildCombatantRow(c: Combatant, onUpdate: () => void): HTMLElement {
   const row = el('div', { cls: ['combatant-row', `type-${c.type}`] });
@@ -106,7 +99,7 @@ function buildCombatantRow(c: Combatant, onUpdate: () => void): HTMLElement {
     c.modifiers.forEach((m) => {
       const label = VALUELESS_KINDS.includes(m.kind)
         ? m.label
-        : `${m.label}: ${m.kind === 'dex_reaction' ? `−${m.value}` : `+${m.value}`}`;
+        : `${m.label}: ${fmtSign(m.kind === 'dex_reaction' ? -m.value : m.value)}`;
       modChips.appendChild(chip(label, `mod-${m.kind}`));
     });
   }
@@ -137,7 +130,7 @@ function buildCombatantRow(c: Combatant, onUpdate: () => void): HTMLElement {
   return row;
 }
 
-// ── Add-combatant form ────────────────────────────────────────────────────────
+// -- Add-combatant form --------------------------------------------------------
 
 function buildAddForm(type: CombatantType, onAdd: () => void): HTMLElement {
   const isMonster = type !== 'player';
@@ -154,15 +147,20 @@ function buildAddForm(type: CombatantType, onAdd: () => void): HTMLElement {
   nameWrap.appendChild(nameInput);
   card.appendChild(nameWrap);
 
-  // HP input (monsters only)
+  // HP + Quantity inputs (monsters only)
   let hpInput: HTMLInputElement | null = null;
+  let qtyInput: HTMLInputElement | null = null;
   if (isMonster) {
-    const hpWrap = el('div', { cls: 'form-group' });
+    const hpRow = el('div', { cls: 'form-row-inline' });
     hpInput = el('input', {
       attrs: { type: 'number', placeholder: 'Max HP', min: '1', id: `hp-${type}` },
     }) as HTMLInputElement;
-    hpWrap.appendChild(hpInput);
-    card.appendChild(hpWrap);
+    qtyInput = el('input', {
+      attrs: { type: 'number', placeholder: 'Qty', min: '1', max: '20', value: '1', id: `qty-${type}` },
+    }) as HTMLInputElement;
+    const qtyLabel = el('label', { text: '\u00d7', attrs: { for: `qty-${type}`, title: 'Quantity' }, cls: 'qty-label' });
+    hpRow.append(hpInput, qtyLabel, qtyInput);
+    card.appendChild(hpRow);
   }
 
   // Modifiers builder
@@ -176,8 +174,8 @@ function buildAddForm(type: CombatantType, onAdd: () => void): HTMLElement {
     mods.forEach((m, i) => {
       const row = el('div', { cls: 'mod-row' });
       const desc = VALUELESS_KINDS.includes(m.kind)
-        ? `${m.label}`
-        : `${m.label}: ${m.kind === 'dex_reaction' ? `−${m.value}` : `+${m.value}`}`;
+        ? m.label
+        : `${m.label}: ${fmtSign(m.kind === 'dex_reaction' ? -m.value : m.value)}`;
       row.appendChild(el('span', { text: desc }));
       row.appendChild(
         btn('✕', 'btn btn-remove-sm', () => {
@@ -203,7 +201,7 @@ function buildAddForm(type: CombatantType, onAdd: () => void): HTMLElement {
   }) as HTMLInputElement;
 
   const modValueInput = el('input', {
-    attrs: { type: 'number', placeholder: 'Value', min: '0', max: '20' },
+    attrs: { type: 'number', placeholder: 'Value', min: '-20', max: '20' },
   }) as HTMLInputElement;
   modValueInput.value = '0';
 
@@ -239,25 +237,29 @@ function buildAddForm(type: CombatantType, onAdd: () => void): HTMLElement {
       return;
     }
     const maxHp = isMonster && hpInput ? parseInt(hpInput.value, 10) || null : null;
+    const qty = isMonster && qtyInput ? Math.max(1, parseInt(qtyInput.value, 10) || 1) : 1;
 
-    const combatant: Combatant = {
-      id: uid(),
-      name,
-      type,
-      maxHp,
-      currentHp: maxHp,
-      modifiers: [...mods],
-      d10Roll: null,
-      totalInitiative: null,
-      isSurprised: false,
-      isActive: true,
-    };
-
-    addCombatant(combatant);
+    for (let i = 0; i < qty; i++) {
+      const combatant: Combatant = {
+        id: uid(),
+        name: qty > 1 ? `${name} ${i + 1}` : name,
+        type,
+        maxHp,
+        currentHp: maxHp,
+        modifiers: [...mods],
+        d10Roll: null,
+        totalInitiative: null,
+        isSurprised: false,
+        isActive: true,
+        action: '',
+      };
+      addCombatant(combatant);
+    }
 
     // Reset form
     (nameInput as HTMLInputElement).value = '';
     if (hpInput) hpInput.value = '';
+    if (qtyInput) qtyInput.value = '1';
     mods.length = 0;
     refreshModList();
     onAdd();
@@ -265,51 +267,4 @@ function buildAddForm(type: CombatantType, onAdd: () => void): HTMLElement {
   card.appendChild(addBtn);
 
   return card;
-}
-
-// ── Surprise section ──────────────────────────────────────────────────────────
-
-function buildSurpriseSection(): HTMLElement {
-  const section = el('section', { cls: 'surprise-section' });
-  section.appendChild(el('h3', { text: 'Surprise Round' }));
-
-  const row = el('div', { cls: 'surprise-row' });
-
-  const enableLabel = el('label', { cls: 'surprise-toggle-main' });
-  const enableCheck = el('input', { attrs: { type: 'checkbox' } }) as HTMLInputElement;
-
-  const segmentWrap = el('div', { cls: 'surprise-segments-wrap' });
-  const segInput = el('input', {
-    attrs: { type: 'number', min: '1', max: '3', value: '1', id: 'surprise-segments' },
-  }) as HTMLInputElement;
-  const segLabel = el('label', {
-    text: 'Surprise segments:',
-    attrs: { for: 'surprise-segments' },
-  });
-  segmentWrap.append(segLabel, segInput);
-  segmentWrap.style.display = 'none';
-
-  enableCheck.addEventListener('change', () => {
-    const enabled = enableCheck.checked;
-    segmentWrap.style.display = enabled ? '' : 'none';
-    setState({ surpriseSegments: enabled ? parseInt(segInput.value, 10) || 1 : 0 });
-  });
-
-  segInput.addEventListener('change', () => {
-    setState({ surpriseSegments: parseInt(segInput.value, 10) || 1 });
-  });
-
-  enableLabel.appendChild(enableCheck);
-  enableLabel.appendChild(document.createTextNode(' Enable surprise round'));
-  row.append(enableLabel, segmentWrap);
-  section.appendChild(row);
-
-  section.appendChild(
-    el('p', {
-      cls: 'hint',
-      text: 'Mark surprised combatants in the list above using the "Surprised" checkbox.',
-    }),
-  );
-
-  return section;
 }

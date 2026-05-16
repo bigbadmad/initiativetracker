@@ -1,4 +1,4 @@
-import type { Combatant } from '../types.ts';
+﻿import type { Combatant } from '../types.ts';
 import {
   getState,
   setState,
@@ -7,25 +7,25 @@ import {
   startNewRound,
   resetEncounter,
 } from '../state.ts';
-import { sortByInitiative, getCombatantsAtSegment } from '../combat.ts';
+import { sortByInitiative, getCombatantsAtSegment, nextActiveSegment, maxInitiativeSegment } from '../combat.ts';
 import { el, btn } from './components.ts';
 
-// ── Render combat tracker ─────────────────────────────────────────────────────
+// -- Render combat tracker -----------------------------------------------------
 
 export function renderTracker(): HTMLElement {
   const state = getState();
-  const { combatants, currentSegment, roundNumber, inSurprisePhase, surpriseSegments } = state;
+  const { combatants, currentSegment, roundNumber, inSurprisePhase } = state;
 
   const sorted = sortByInitiative(combatants);
   const active = sorted.filter((c) => c.isActive);
   const defeated = sorted.filter((c) => !c.isActive);
 
-  const maxSegment = inSurprisePhase ? surpriseSegments : 10;
+  const maxSegment = maxInitiativeSegment(combatants);
   const actingNow = getCombatantsAtSegment(combatants, currentSegment, inSurprisePhase);
 
   const root = el('div', { cls: 'screen tracker-screen' });
 
-  // ── Header ──────────────────────────────────────────────────────────────────
+  // -- Header ------------------------------------------------------------------
   const header = el('header', { cls: 'screen-header' });
   const phaseLabel = inSurprisePhase ? 'Surprise Phase' : `Round ${roundNumber}`;
   header.appendChild(el('h1', { text: '⚔ Combat Tracker' }));
@@ -35,7 +35,7 @@ export function renderTracker(): HTMLElement {
   const layout = el('div', { cls: 'tracker-layout' });
   root.appendChild(layout);
 
-  // ── Left column: combatant list ─────────────────────────────────────────────
+  // -- Left column: combatant list ---------------------------------------------
   const leftCol = el('div', { cls: 'tracker-left' });
   layout.appendChild(leftCol);
 
@@ -63,7 +63,7 @@ export function renderTracker(): HTMLElement {
     leftCol.appendChild(defeatedSection);
   }
 
-  // ── Right column: segment panel + actions ───────────────────────────────────
+  // -- Right column: segment panel + actions -----------------------------------
   const rightCol = el('div', { cls: 'tracker-right' });
   layout.appendChild(rightCol);
 
@@ -73,16 +73,25 @@ export function renderTracker(): HTMLElement {
   // Acting-now callout
   if (actingNow.length > 0) {
     const callout = el('div', { cls: 'acting-callout' });
-    callout.appendChild(el('p', { cls: 'callout-label', text: `Segment ${currentSegment} — Acting:` }));
+    callout.appendChild(el('p', { cls: 'callout-label', text: `Segment ${currentSegment}: Acting:` }));
     actingNow.forEach((c) => {
-      callout.appendChild(el('span', { cls: `callout-name type-${c.type}`, text: c.name }));
+      const nameSpan = el('span', { cls: `callout-name type-${c.type}`, text: c.name });
+      callout.appendChild(nameSpan);
+      // Show declared action, falling back to the weapon/spell modifier label from setup
+      const fallbackMod = c.modifiers.find(
+        (m) => m.kind === 'weapon_speed' || m.kind === 'spell_casting',
+      );
+      const displayAction = c.action || fallbackMod?.label;
+      if (displayAction) {
+        callout.appendChild(el('span', { cls: 'callout-action', text: displayAction }));
+      }
     });
     rightCol.appendChild(callout);
   } else {
     rightCol.appendChild(
       el('div', {
         cls: 'acting-callout acting-empty',
-        text: `Segment ${currentSegment} — No one acts.`,
+        text: `Segment ${currentSegment}: No one acts.`,
       }),
     );
   }
@@ -104,25 +113,22 @@ export function renderTracker(): HTMLElement {
   const actions = el('div', { cls: 'tracker-actions' });
   rightCol.appendChild(actions);
 
-  // Advance segment / end phase
-  const isLastSegment = currentSegment >= maxSegment;
+  // Advance segment - jump to next segment with actual activity, skipping empty ones
+  const nextSeg = nextActiveSegment(combatants, currentSegment, maxSegment, inSurprisePhase);
 
-  if (!isLastSegment) {
+  if (nextSeg !== null) {
     actions.appendChild(
-      btn(`Segment ${currentSegment + 1} →`, 'btn btn-primary btn-advance', () => {
-        setState({ currentSegment: currentSegment + 1 });
-      }),
-    );
-  } else if (inSurprisePhase) {
-    actions.appendChild(
-      btn('End Surprise → Begin Round 1', 'btn btn-primary btn-advance', () => {
-        setState({ inSurprisePhase: false, currentSegment: 1, roundNumber: 1 });
+      btn(`Next: Segment ${nextSeg} →`, 'btn btn-primary btn-advance', () => {
+        setState({ currentSegment: nextSeg });
       }),
     );
   } else {
+    const confirmMsg = inSurprisePhase
+      ? 'End the surprise round and begin initiative for Round 1?'
+      : `End round ${roundNumber} and begin initiative for round ${roundNumber + 1}?`;
     actions.appendChild(
       btn('Next Round →', 'btn btn-primary btn-advance', () => {
-        if (confirm(`End round ${roundNumber} and begin initiative for round ${roundNumber + 1}?`)) {
+        if (confirm(confirmMsg)) {
           startNewRound();
         }
       }),
@@ -146,7 +152,7 @@ export function renderTracker(): HTMLElement {
   return root;
 }
 
-// ── Combatant card ────────────────────────────────────────────────────────────
+// -- Combatant card ------------------------------------------------------------
 
 function buildCombatantCard(
   c: Combatant,
@@ -169,16 +175,26 @@ function buildCombatantCard(
   // Initiative badge
   const initBadge = el('span', {
     cls: 'init-badge',
-    text: c.totalInitiative !== null && c.totalInitiative < 99 ? String(c.totalInitiative) : '—',
+    text: c.totalInitiative !== null && c.totalInitiative < 99 ? String(c.totalInitiative) : '-',
   });
   card.appendChild(initBadge);
 
-  // Name + type
+  // Name + type + acting indicator
   const nameBlock = el('div', { cls: 'card-name-block' });
   nameBlock.appendChild(el('span', { cls: 'card-name', text: c.name }));
-  if (isActing) nameBlock.appendChild(el('span', { cls: 'acting-indicator', text: '⚔' }));
+  if (isActing) nameBlock.appendChild(el('span', { cls: 'acting-indicator', text: '\u2694' }));
   if (isSurprisedThisPhase)
     nameBlock.appendChild(el('span', { cls: 'badge badge-surprised', text: 'SURPRISED' }));
+
+  // Show weapon / spell modifier labels from setup (e.g. "Longsword", "Magic Missile")
+  const actionMods = c.modifiers.filter(
+    (m) => m.kind === 'weapon_speed' || m.kind === 'spell_casting' || m.kind === 'other',
+  );
+  if (actionMods.length > 0) {
+    nameBlock.appendChild(
+      el('span', { cls: 'card-modifier-label', text: actionMods.map((m) => m.label).join(', ') }),
+    );
+  }
   card.appendChild(nameBlock);
 
   // HP controls (monsters/NPCs only)
@@ -189,7 +205,7 @@ function buildCombatantCard(
   return card;
 }
 
-// ── HP controls ───────────────────────────────────────────────────────────────
+// -- HP controls ---------------------------------------------------------------
 
 function buildHpControls(c: Combatant): HTMLElement {
   const wrap = el('div', { cls: 'hp-controls' });
@@ -234,7 +250,7 @@ function buildHpControls(c: Combatant): HTMLElement {
   return wrap;
 }
 
-// ── Segment bar ───────────────────────────────────────────────────────────────
+// -- Segment bar ---------------------------------------------------------------
 
 function buildSegmentBar(
   current: number,
@@ -245,12 +261,11 @@ function buildSegmentBar(
   wrap.appendChild(el('p', { cls: 'segment-bar-label', text: 'Segments' }));
 
   const boxes = el('div', { cls: 'segment-boxes' });
-  for (let i = 1; i <= 10; i++) {
+  for (let i = 1; i <= max; i++) {
     const box = el('div', {
       cls: [
         'segment-box',
         i === current ? 'seg-current' : '',
-        i > max ? 'seg-inactive' : '',
         actingNow.length > 0 && i === current ? 'seg-has-actors' : '',
       ]
         .filter(Boolean)
@@ -263,7 +278,7 @@ function buildSegmentBar(
   return wrap;
 }
 
-// ── Defeated row ──────────────────────────────────────────────────────────────
+// -- Defeated row --------------------------------------------------------------
 
 function buildDefeatedRow(c: Combatant): HTMLElement {
   const row = el('div', { cls: 'defeated-row' });
@@ -274,7 +289,7 @@ function buildDefeatedRow(c: Combatant): HTMLElement {
   return row;
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// -- Helpers -------------------------------------------------------------------
 
 function hpClass(current: number, max: number): string {
   const pct = current / max;

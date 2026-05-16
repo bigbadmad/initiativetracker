@@ -1,6 +1,6 @@
-import type { Combatant, Modifier } from './types.ts';
+﻿import type { Combatant, Modifier } from './types.ts';
 
-// ── Initiative calculation ────────────────────────────────────────────────────
+// -- Initiative calculation ----------------------------------------------------
 
 /**
  * Compute the total initiative for a combatant given their d10 roll.
@@ -26,8 +26,8 @@ export function calcInitiative(d10: number, modifiers: Modifier[]): number {
         total += mod.value;
         break;
       case 'dex_reaction':
-        // Positive dex bonus reduces initiative (acts sooner)
-        total -= mod.value;
+        // Entered as a direct delta: negative = faster (reduces initiative), positive = slower
+        total += mod.value;
         break;
       case 'haste':
         hasHaste = true;
@@ -87,6 +87,56 @@ export function getCombatantsAtSegment(
 }
 
 /**
+ * Returns the highest initiative total among active combatants, used as the
+ * dynamic ceiling for the segment bar. Minimum value returned is 10.
+ */
+export function maxInitiativeSegment(combatants: Combatant[]): number {
+  let max = 10;
+  for (const c of combatants) {
+    if (c.isActive && c.totalInitiative !== null && c.totalInitiative < 99) {
+      max = Math.max(max, c.totalInitiative);
+    }
+  }
+  return max;
+}
+
+/**
+ * Returns the next segment number (after currentSegment) that has at least one
+ * active combatant acting. Returns null when no further activity exists within
+ * maxSegment - signalling end of round.
+ */
+export function nextActiveSegment(
+  combatants: Combatant[],
+  currentSegment: number,
+  maxSegment: number,
+  inSurprisePhase: boolean,
+): number | null {
+  for (let s = currentSegment + 1; s <= maxSegment; s++) {
+    if (getCombatantsAtSegment(combatants, s, inSurprisePhase).length > 0) {
+      return s;
+    }
+  }
+  return null;
+}
+
+/**
+ * Returns the first segment (starting from 1) that has activity - used when
+ * entering the combat phase so the tracker opens on the first live segment.
+ */
+export function firstActiveSegment(
+  combatants: Combatant[],
+  maxSegment: number,
+  inSurprisePhase: boolean,
+): number {
+  for (let s = 1; s <= maxSegment; s++) {
+    if (getCombatantsAtSegment(combatants, s, inSurprisePhase).length > 0) {
+      return s;
+    }
+  }
+  return 1;
+}
+
+/**
  * Returns a human-readable summary of a combatant's modifier stack.
  */
 export function describeModifiers(modifiers: Modifier[]): string {
@@ -95,9 +145,7 @@ export function describeModifiers(modifiers: Modifier[]): string {
 }
 
 function modifierSign(mod: Modifier): string {
-  if (mod.kind === 'dex_reaction') {
-    return mod.value >= 0 ? `−${mod.value}` : `+${Math.abs(mod.value)}`;
-  }
+
   if (mod.kind === 'haste') return 'Haste ÷2';
   if (mod.kind === 'slow') return 'Slow +10';
   return mod.value >= 0 ? `+${mod.value}` : `${mod.value}`;
@@ -117,7 +165,7 @@ export function netModifierOffset(modifiers: Modifier[]): number {
         offset += mod.value;
         break;
       case 'dex_reaction':
-        offset -= mod.value;
+        offset += mod.value;
         break;
     }
   }

@@ -1,4 +1,4 @@
-/* ── Reset & base ──────────────────────────────────────────────────────────── */
+﻿/* -- Reset & base ------------------------------------------------------------ */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
@@ -41,13 +41,13 @@ html, body {
   padding: 12px;
 }
 
-/* ── Typography ────────────────────────────────────────────────────────────── */
+/* -- Typography -------------------------------------------------------------- */
 h1 { font-size: 1.75rem; color: var(--amber-light); letter-spacing: 0.05em; }
 h2 { font-size: 1.25rem; color: var(--amber); margin-bottom: 10px; }
 h3 { font-size: 1.05rem; color: var(--amber); margin-bottom: 8px; }
 p  { margin-bottom: 6px; }
 
-/* ── Screen shell ──────────────────────────────────────────────────────────── */
+/* -- Screen shell ------------------------------------------------------------ */
 .screen { display: flex; flex-direction: column; gap: 16px; }
 
 .screen-header {
@@ -60,7 +60,7 @@ p  { margin-bottom: 6px; }
   margin-bottom: 0;
 }
 
-/* ── Buttons ───────────────────────────────────────────────────────────────── */
+/* -- Buttons ----------------------------------------------------------------- */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -139,7 +139,7 @@ p  { margin-bottom: 6px; }
 .btn-start { width: 100%; padding: 12px; font-size: 1.1rem; }
 .btn-advance { width: 100%; padding: 12px; font-size: 1rem; }
 
-/* ── Inputs ────────────────────────────────────────────────────────────────── */
+/* -- Inputs ------------------------------------------------------------------ */
 input[type="text"],
 input[type="number"],
 select {
@@ -169,7 +169,7 @@ label {
 .form-group { margin-bottom: 8px; }
 .form-label { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 4px; }
 
-/* ── Badges & chips ────────────────────────────────────────────────────────── */
+/* -- Badges & chips ---------------------------------------------------------- */
 .badge {
   display: inline-block;
   padding: 2px 7px;
@@ -201,7 +201,7 @@ label {
 .chip.mod-haste         { border-color: #2a5a5a; color: #7ee0e0; }
 .chip.mod-slow          { border-color: #5a2a2a; color: var(--red-light); }
 
-/* ── Notices ───────────────────────────────────────────────────────────────── */
+/* -- Notices ----------------------------------------------------------------- */
 .notice {
   padding: 10px 14px;
   border-radius: var(--radius);
@@ -581,7 +581,93 @@ label {
   gap: 8px;
 }
 
-/* ── Scrollbar ─────────────────────────────────────────────────────────────── */
+/* -- Action inputs ----------------------------------------------------------- */
+.action-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.action-row label { margin: 0; white-space: nowrap; }
+.action-row input  { flex: 1; font-size: 0.82rem; padding: 4px 8px; }
+
+.card-modifier-label {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--amber-dim);
+  font-style: italic;
+  margin-top: 1px;
+}
+
+/* Initiative screen - editable action declaration row (mirrors setup modifier form) */
+.action-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.action-form-row select,
+.action-form-row input {
+  flex: 1;
+  min-width: 70px;
+  font-size: 0.85rem;
+  padding: 4px 8px;
+}
+.action-kind-select { max-width: 140px; }
+.card-other-mods {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-bottom: 4px;
+}
+
+.action-input {
+  width: 100%;
+  font-size: 0.8rem;
+  padding: 3px 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 4px;
+}
+.action-input:focus { border-color: var(--amber-dim); color: var(--text); font-style: normal; outline: none; }
+.action-input-active {
+  border-color: var(--amber-dim);
+  color: var(--amber-light);
+  font-style: normal;
+  font-weight: bold;
+}
+
+.callout-action {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--amber-dim);
+  font-style: italic;
+  padding-left: 4px;
+}
+
+/* -- Quantity inline row ----------------------------------------------------- */
+.form-row-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.form-row-inline input:first-child { flex: 1; }
+.qty-label {
+  flex-shrink: 0;
+  color: var(--amber-dim);
+  font-size: 1.1rem;
+  font-weight: bold;
+  margin: 0;
+  cursor: default;
+}
+.form-row-inline input:last-child { width: 54px; }
+
+/* -- Scrollbar --------------------------------------------------------------- */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }

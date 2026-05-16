@@ -1,4 +1,4 @@
-// ── Modifier types ──────────────────────────────────────────────────────────
+﻿// -- Modifier types ----------------------------------------------------------
 
 export type ModifierKind =
   | 'weapon_speed'
@@ -18,7 +18,7 @@ export interface Modifier {
   label: string;
 }
 
-// ── Combatant ────────────────────────────────────────────────────────────────
+// -- Combatant ----------------------------------------------------------------
 
 export type CombatantType = 'player' | 'monster' | 'npc';
 
@@ -39,13 +39,15 @@ export interface Combatant {
   isSurprised: boolean;
   /** Set to false when currentHp reaches 0 or below. */
   isActive: boolean;
+  /** Free-text label for what this combatant is doing this round (persists until changed). */
+  action: string;
 }
 
-// ── Application phases ───────────────────────────────────────────────────────
+// -- Application phases -------------------------------------------------------
 
 export type AppPhase = 'setup' | 'initiative' | 'combat';
 
-// ── Top-level app state ──────────────────────────────────────────────────────
+// -- Top-level app state ------------------------------------------------------
 
 export interface AppState {
   phase: AppPhase;
