@@ -3,6 +3,8 @@ import type { AppState } from '../types.ts';
 import { openMonsterLibrary } from './library.ts';
 import type { MonsterTemplate } from '../data/monsters.ts';
 import { rollHD } from '../data/monsters.ts';
+import { ENCOUNTER_TABLES, generateEncounter, rollEncounterHp } from '../data/encounters.ts';
+import type { GeneratedEncounter } from '../data/encounters.ts';
 import {
   addCombatant,
   removeCombatant,
@@ -36,6 +38,11 @@ let dragId: string | null = null;
 // -- Last library selection (used in submit handler for per-monster HP rolling) -
 
 let lastLibraryTemplate: MonsterTemplate | null = null;
+
+// -- Random encounter generator state (persists across re-renders) ------------
+
+let encounterGeneratorOpen = false;
+let encounterTerrainId = 'hills';
 
 // -- Build the setup screen ----------------------------------------------------
 
@@ -79,6 +86,9 @@ export function renderSetup(): HTMLElement {
   }
   refreshList();
 
+  // -- Random encounter generator -----------------------------------------------
+  body.appendChild(buildEncounterGenerator(refreshList));
+
   // -- Add combatant forms -----------------------------------------------------
   const formsRow = el('div', { cls: 'add-forms-row' });
   body.appendChild(formsRow);
@@ -98,6 +108,123 @@ export function renderSetup(): HTMLElement {
   body.appendChild(startBtn);
 
   return root;
+}
+
+// -- Random encounter generator ------------------------------------------------
+
+function buildEncounterGenerator(onAdd: () => void): HTMLElement {
+  const details = el('details', { cls: 'encounter-generator' });
+  if (encounterGeneratorOpen) details.setAttribute('open', '');
+  details.addEventListener('toggle', () => {
+    encounterGeneratorOpen = (details as HTMLDetailsElement).open;
+  });
+
+  const summary = el('summary', { cls: 'encounter-generator-summary' });
+  summary.appendChild(faIcon('fa-solid fa-dice'));
+  summary.appendChild(document.createTextNode(' Random Encounter'));
+  details.appendChild(summary);
+
+  const body = el('div', { cls: 'encounter-generator-body' });
+
+  // ── Terrain selector + generate button ──────────────────────────────────────
+  const controls = el('div', { cls: 'encounter-controls' });
+
+  const terrainSelect = el('select', { cls: 'encounter-terrain-select' }) as HTMLSelectElement;
+  ENCOUNTER_TABLES.forEach((table) => {
+    const opt = el('option', { text: table.label, attrs: { value: table.id } });
+    terrainSelect.appendChild(opt);
+  });
+  terrainSelect.value = encounterTerrainId;
+  terrainSelect.addEventListener('change', () => {
+    encounterTerrainId = terrainSelect.value;
+  });
+  controls.appendChild(terrainSelect);
+
+  const generateBtn = iconBtn('fa-solid fa-dice', 'Generate', 'btn btn-secondary', () => {
+    const result = generateEncounter(terrainSelect.value);
+    encounterTerrainId = terrainSelect.value;
+    renderResult(result);
+  });
+  controls.appendChild(generateBtn);
+
+  body.appendChild(controls);
+
+  // ── Result area ─────────────────────────────────────────────────────────────
+  const resultArea = el('div', { cls: 'encounter-result' });
+  body.appendChild(resultArea);
+
+  function renderResult(enc: GeneratedEncounter | null) {
+    resultArea.innerHTML = '';
+    if (!enc) return;
+
+    const nameEl = el('p', { cls: 'encounter-result-name' });
+    nameEl.appendChild(document.createTextNode(`${enc.count} × ${enc.name}`));
+    if (enc.count !== 1) {
+      const singular = el('span', { cls: 'encounter-count-expr', text: ` (${enc.countExpr})` });
+      nameEl.appendChild(singular);
+    }
+    resultArea.appendChild(nameEl);
+
+    // Stats line
+    const statsEl = el('p', { cls: 'encounter-result-stats' });
+    if (enc.template) {
+      statsEl.textContent =
+        `HD ${enc.template.hd} · AC ${enc.template.ac} · ${enc.template.attacks} att (${enc.template.damage}) · THAC0 ${enc.template.thac0}`;
+    } else if (enc.hd) {
+      statsEl.textContent = `HD ${enc.hd}${enc.hp ? ` · avg HP ${enc.hp}` : ''} — stats not in library, add manually`;
+      statsEl.classList.add('encounter-stats-missing');
+    }
+    resultArea.appendChild(statsEl);
+
+    // Action row
+    const actions = el('div', { cls: 'encounter-result-actions' });
+
+    const addBtn = iconBtn('fa-solid fa-plus', `Add ${enc.count === 1 ? enc.name : enc.count + '× ' + enc.name}`, 'btn btn-primary', () => {
+      for (let i = 0; i < enc.count; i++) {
+        const maxHp = rollEncounterHp(enc);
+        const name = enc.count > 1 ? `${enc.name} ${i + 1}` : enc.name;
+        const combatant: Combatant = {
+          id: uid(),
+          name,
+          type: 'monster',
+          maxHp,
+          currentHp: maxHp,
+          modifiers: [],
+          d10Roll: null,
+          totalInitiative: null,
+          prevInitiative: null,
+          isSurprised: false,
+          isHorsDeCombat: false,
+          atRange: false,
+          targetId: null,
+          isActive: true,
+          action: '',
+          ...(enc.template ? {
+            ac: enc.template.ac,
+            attacks: enc.template.attacks,
+            damage: enc.template.damage,
+            thac0: enc.template.thac0,
+          } : {}),
+        };
+        addCombatant(combatant);
+      }
+      resultArea.innerHTML = '';
+      onAdd();
+    });
+    actions.appendChild(addBtn);
+
+    actions.appendChild(
+      iconBtn('fa-solid fa-rotate-right', 'Reroll', 'btn btn-secondary', () => {
+        const rerolled = generateEncounter(terrainSelect.value);
+        renderResult(rerolled);
+      }),
+    );
+
+    resultArea.appendChild(actions);
+  }
+
+  details.appendChild(body);
+  return details;
 }
 
 // -- Export / Import toolbar ---------------------------------------------------

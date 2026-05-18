@@ -328,6 +328,91 @@ label {
 }
 .surprise-toggle input { width: auto; }
 
+/* ── Random Encounter Generator ──────────────────────────────────────────── */
+.encounter-generator {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.encounter-generator-summary {
+  padding: 10px 14px;
+  cursor: pointer;
+  color: var(--amber);
+  font-size: 0.95rem;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+  list-style: none;
+}
+.encounter-generator-summary::-webkit-details-marker { display: none; }
+.encounter-generator-summary::before {
+  content: '▸';
+  color: var(--amber-dim);
+  transition: transform var(--transition);
+}
+details[open] .encounter-generator-summary::before { transform: rotate(90deg); }
+
+.encounter-generator-body {
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.encounter-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.encounter-terrain-select {
+  flex: 1;
+  min-width: 180px;
+}
+
+/* Result display */
+.encounter-result {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.encounter-result-name {
+  font-size: 1.05rem;
+  font-weight: bold;
+  color: var(--text-bright);
+  margin: 0;
+}
+
+.encounter-count-expr {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-weight: normal;
+  font-style: italic;
+}
+
+.encounter-result-stats {
+  font-size: 0.8rem;
+  color: var(--amber-dim);
+  font-style: italic;
+  margin: 0;
+}
+
+.encounter-stats-missing {
+  color: var(--text-muted);
+}
+
+.encounter-result-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 /* Section header with inline toolbar (Export / Import) */
 .section-header-row {
   display: flex;
