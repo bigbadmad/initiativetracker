@@ -13,7 +13,7 @@ import {
   reorderCombatants,
   importState,
 } from '../state.ts';
-import { el, btn, uid, chip, fmtSign } from './components.ts';
+import { el, uid, chip, fmtSign, iconBtn, faIcon } from './components.ts';
 
 // -- Modifier form data --------------------------------------------------------
 
@@ -87,7 +87,7 @@ export function renderSetup(): HTMLElement {
   formsRow.appendChild(buildAddForm('monster', refreshList));
 
   // -- Start button ------------------------------------------------------------
-  const startBtn = btn('Start Encounter →', 'btn btn-primary btn-start', () => {
+  const startBtn = iconBtn('fa-solid fa-play', 'Start Encounter', 'btn btn-primary btn-start', () => {
     const { combatants } = getState();
     if (combatants.length < 2) {
       alert('Add at least 2 combatants before starting.');
@@ -107,7 +107,7 @@ function buildExportImportToolbar(): HTMLElement {
 
   // Export
   toolbar.appendChild(
-    btn('Export JSON', 'btn btn-secondary btn-toolbar', () => {
+    iconBtn('fa-solid fa-file-export', 'Export', 'btn btn-secondary btn-toolbar', () => {
       const json = JSON.stringify(getState(), null, 2);
       const blob = new Blob([json], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -145,7 +145,7 @@ function buildExportImportToolbar(): HTMLElement {
     fileInput.value = '';
   });
 
-  const importBtn = btn('Import JSON', 'btn btn-secondary btn-toolbar', () => {
+  const importBtn = iconBtn('fa-solid fa-file-import', 'Import', 'btn btn-secondary btn-toolbar', () => {
     fileInput.click();
   });
 
@@ -213,7 +213,8 @@ function buildCombatantRow(c: Combatant, onUpdate: () => void): HTMLElement {
   });
 
   // Drag handle
-  const dragHandle = el('span', { cls: 'drag-handle', text: '⠿' });
+  const dragHandle = el('span', { cls: 'drag-handle', attrs: { 'aria-hidden': 'true' } });
+  dragHandle.appendChild(faIcon('fa-solid fa-grip-vertical'));
   mainRow.appendChild(dragHandle);
 
   const info = el('div', { cls: 'combatant-info' });
@@ -252,17 +253,17 @@ function buildCombatantRow(c: Combatant, onUpdate: () => void): HTMLElement {
   controls.appendChild(surpriseLabel);
 
   controls.appendChild(
-    btn('✏', `btn btn-icon${isEditing ? ' btn-icon-active' : ''}`, () => {
+    iconBtn('fa-solid fa-pencil', '', `btn btn-icon${isEditing ? ' btn-icon-active' : ''}`, () => {
       editingCombatantId = isEditing ? null : c.id;
       onUpdate();
-    }),
+    }, 'Edit combatant'),
   );
 
   controls.appendChild(
-    btn('✕', 'btn btn-remove', () => {
+    iconBtn('fa-solid fa-xmark', '', 'btn btn-remove', () => {
       editingCombatantId = null;
       removeCombatant(c.id);
-    }),
+    }, 'Remove combatant'),
   );
 
   mainRow.appendChild(controls);
@@ -327,9 +328,9 @@ function buildEditPanel(c: Combatant): HTMLElement {
       : `${m.label}: ${fmtSign(m.value)}`;
     modRow.appendChild(el('span', { text: desc }));
     modRow.appendChild(
-      btn('✕', 'btn btn-remove-sm', () => {
+      iconBtn('fa-solid fa-xmark', '', 'btn btn-remove-sm', () => {
         updateCombatant(c.id, { modifiers: c.modifiers.filter((x) => x.id !== m.id) });
-      }),
+      }, 'Remove modifier'),
     );
     modList.appendChild(modRow);
   });
@@ -361,14 +362,14 @@ function buildEditPanel(c: Combatant): HTMLElement {
     epKindSelect,
     epLabelInput,
     epValueInput,
-    btn('+', 'btn btn-secondary btn-add-mod', () => {
+    iconBtn('fa-solid fa-plus', '', 'btn btn-secondary btn-add-mod', () => {
       const kind = epKindSelect.value as ModifierKind;
       const label = epLabelInput.value.trim() || MOD_KIND_LABELS[kind];
       const value = VALUELESS_KINDS.includes(kind) ? 0 : parseInt(epValueInput.value, 10) || 0;
       updateCombatant(c.id, {
         modifiers: [...c.modifiers, { id: uid(), kind, value, label }],
       });
-    }),
+    }, 'Add modifier'),
   );
 
   modSection.appendChild(addModForm);
@@ -399,7 +400,7 @@ function buildAddForm(type: CombatantType, onAdd: () => void): HTMLElement {
   // Browse Library button — monsters only, placed after the name input
   if (isMonster) {
     card.appendChild(
-      btn('📖 Browse Monster Library', 'btn btn-secondary btn-library', () => {
+      iconBtn('fa-solid fa-book-open', 'Browse Monster Library', 'btn btn-secondary btn-library', () => {
         openMonsterLibrary((template) => {
           lastLibraryTemplate = template;
           (nameInput as HTMLInputElement).value = template.name;
@@ -438,10 +439,10 @@ function buildAddForm(type: CombatantType, onAdd: () => void): HTMLElement {
         : `${m.label}: ${fmtSign(m.value)}`;
       row.appendChild(el('span', { text: desc }));
       row.appendChild(
-        btn('✕', 'btn btn-remove-sm', () => {
+        iconBtn('fa-solid fa-xmark', '', 'btn btn-remove-sm', () => {
           mods.splice(i, 1);
           refreshModList();
-        }),
+        }, 'Remove modifier'),
       );
       modListEl.appendChild(row);
     });
@@ -476,7 +477,7 @@ function buildAddForm(type: CombatantType, onAdd: () => void): HTMLElement {
   kindSelect.addEventListener('change', updateValueVisibility);
   updateValueVisibility();
 
-  const addModBtn = btn('+', 'btn btn-secondary btn-add-mod', () => {
+  const addModBtn = iconBtn('fa-solid fa-plus', '', 'btn btn-secondary btn-add-mod', () => {
     const kind = kindSelect.value as ModifierKind;
     const label = modLabelInput.value.trim() || MOD_KIND_LABELS[kind];
     const value = VALUELESS_KINDS.includes(kind) ? 0 : parseInt(modValueInput.value, 10) || 0;
@@ -490,7 +491,9 @@ function buildAddForm(type: CombatantType, onAdd: () => void): HTMLElement {
   card.appendChild(modForm);
 
   // Submit
-  const addBtn = btn(`Add ${type === 'player' ? 'Player' : 'Monster/NPC'}`, 'btn btn-primary', () => {
+  const addBtnIcon = type === 'player' ? 'fa-solid fa-user-plus' : 'fa-solid fa-dragon';
+  const addBtnLabel = type === 'player' ? 'Add Player' : 'Add Monster/NPC';
+  const addBtn = iconBtn(addBtnIcon, addBtnLabel, 'btn btn-primary', () => {
     const name = (nameInput as HTMLInputElement).value.trim();
     if (!name) {
       alert('Please enter a name.');
@@ -530,6 +533,9 @@ function buildAddForm(type: CombatantType, onAdd: () => void): HTMLElement {
         totalInitiative: null,
         prevInitiative: null,
         isSurprised: false,
+        isHorsDeCombat: false,
+        atRange: false,
+        targetId: null,
         isActive: true,
         action: '',
         // Combat reference stats from the library (displayed in the tracker)

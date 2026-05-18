@@ -81,6 +81,7 @@ export function getCombatantsAtSegment(
 ): Combatant[] {
   return combatants.filter((c) => {
     if (!c.isActive) return false;
+    if (c.isHorsDeCombat) return false;
     if (inSurprisePhase && c.isSurprised) return false;
     return c.totalInitiative === segment;
   });

@@ -43,6 +43,17 @@ export interface Combatant {
   action: string;
   /** The totalInitiative from the previous round — displayed as context during the current round. */
   prevInitiative: number | null;
+  /** Whether this combatant is at range rather than in melee. Persists across rounds. */
+  atRange: boolean;
+  /** For monsters: the ID of the PC they are currently assigned to attack. Null = unassigned. */
+  targetId: string | null;
+  /**
+   * Hors de combat: combatant is temporarily incapacitated (unconscious, stunned, paralysed, etc.)
+   * but may recover. They are shown in the tracker but do not act on any segment. Unlike isActive,
+   * this does NOT remove them from the active list and is NOT cleared at the start of a new round —
+   * only the DM can clear it manually.
+   */
+  isHorsDeCombat: boolean;
   // -- Combat reference fields (populated from the monster library) -------------
   /** Armor Class — shown during combat so players know what they need to hit. */
   ac?: number;

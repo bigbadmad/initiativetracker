@@ -91,3 +91,30 @@ export function clamp(value: number, min: number, max: number): number {
 export function fmtSign(n: number): string {
   return n >= 0 ? `+${n}` : `${n}`;
 }
+
+/** Create a Font Awesome icon element (aria-hidden — purely decorative). */
+export function faIcon(cls: string): HTMLElement {
+  const i = document.createElement('i');
+  i.className = cls;
+  i.setAttribute('aria-hidden', 'true');
+  return i;
+}
+
+/**
+ * Create a button with a Font Awesome icon.
+ * Pass an empty `label` for icon-only buttons; supply `ariaLabel` for accessibility.
+ */
+export function iconBtn(
+  iconCls: string,
+  label: string,
+  cls: string,
+  onClick: (e: MouseEvent) => void,
+  ariaLabel?: string,
+): HTMLButtonElement {
+  const b = el('button', { cls });
+  b.appendChild(faIcon(iconCls));
+  if (label) b.appendChild(document.createTextNode(' ' + label));
+  if (ariaLabel) b.setAttribute('aria-label', ariaLabel);
+  b.addEventListener('click', onClick);
+  return b;
+}

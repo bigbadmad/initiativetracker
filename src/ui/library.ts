@@ -1,6 +1,6 @@
 import type { MonsterTemplate, MonsterTag } from '../data/monsters.ts';
 import { MONSTERS, ALL_TAGS, TAG_LABELS } from '../data/monsters.ts';
-import { el, btn } from './components.ts';
+import { el, btn, iconBtn } from './components.ts';
 
 /**
  * Open the monster library modal. Calls onSelect with the chosen template,
@@ -45,7 +45,7 @@ export function openMonsterLibrary(onSelect: (m: MonsterTemplate) => void): void
   }) as HTMLInputElement;
   header.appendChild(searchInput);
 
-  header.appendChild(btn('✕', 'btn btn-ghost modal-close-btn', close));
+  header.appendChild(iconBtn('fa-solid fa-xmark', '', 'btn btn-ghost modal-close-btn', close, 'Close'));
   panel.appendChild(header);
 
   // -- Tag filters -------------------------------------------------------------
@@ -116,7 +116,7 @@ export function openMonsterLibrary(onSelect: (m: MonsterTemplate) => void): void
       row.appendChild(info);
 
       row.appendChild(
-        btn('Select', 'btn btn-secondary btn-sm btn-lib-select', () => {
+        iconBtn('fa-solid fa-check', 'Select', 'btn btn-secondary btn-sm btn-lib-select', () => {
           onSelect(m);
           close();
         }),

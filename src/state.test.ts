@@ -35,6 +35,9 @@ function makePlayer(overrides: Partial<Combatant> = {}): Combatant {
     prevInitiative: null,
     isSurprised: false,
     isActive: true,
+    isHorsDeCombat: false,
+    atRange: false,
+    targetId: null,
     action: '',
     ...overrides,
   };

@@ -1,7 +1,7 @@
 ﻿import type { Combatant, ModifierKind } from '../types.ts';
 import { getState, setState, updateCombatant, updateCombatantSilent } from '../state.ts';
 import { calcInitiative, rollD10, firstActiveSegment, maxInitiativeSegment } from '../combat.ts';
-import { el, btn, fmtSign, uid } from './components.ts';
+import { el, fmtSign, uid, iconBtn } from './components.ts';
 
 // -- Render initiative entry screen --------------------------------------------
 
@@ -40,7 +40,7 @@ export function renderInitiative(): HTMLElement {
   root.appendChild(bar);
 
   // Roll for all monsters/NPCs
-  const rollMonstersBtn = btn('🎲 Roll Monsters & NPCs', 'btn btn-secondary', () => {
+  const rollMonstersBtn = iconBtn('fa-solid fa-dice', 'Roll Monsters & NPCs', 'btn btn-secondary', () => {
     getState()
       .combatants.filter((c) => c.isActive && c.type !== 'player')
       .forEach((c) => {
@@ -57,24 +57,30 @@ export function renderInitiative(): HTMLElement {
   bar.appendChild(rollMonstersBtn);
 
   // Lock in and sort
-  const lockBtn = btn('⚔ Lock In & Begin Combat →', 'btn btn-primary', () => {
+  const lockBtn = iconBtn('fa-solid fa-swords', 'Lock In & Begin Combat', 'btn btn-primary', () => {
     const current = getState();
 
-    // Validate all active, non-surprised combatants have a roll
+    // Validate: active combatants that can act must have a roll
     const missing = current.combatants.filter(
-      (c) => c.isActive && !(c.isSurprised && current.inSurprisePhase) && c.d10Roll === null,
+      (c) =>
+        c.isActive &&
+        !c.isHorsDeCombat &&
+        !(c.isSurprised && current.inSurprisePhase) &&
+        c.d10Roll === null,
     );
     if (missing.length > 0) {
       alert(`Missing d10 roll for: ${missing.map((c) => c.name).join(', ')}`);
       return;
     }
 
-    // Batch: apply sentinel initiative for surprised combatants + find first live segment
-    const updatedCombatants = current.combatants.map((c) =>
-      c.isActive && c.isSurprised && current.inSurprisePhase
-        ? { ...c, d10Roll: null, totalInitiative: 99 }
-        : c,
-    );
+    // Assign sentinel initiative (99) to combatants that won't act this round
+    const updatedCombatants = current.combatants.map((c) => {
+      if (c.isActive && c.isSurprised && current.inSurprisePhase)
+        return { ...c, d10Roll: null, totalInitiative: 99 };
+      if (c.isActive && c.isHorsDeCombat)
+        return { ...c, d10Roll: null, totalInitiative: 99 };
+      return c;
+    });
 
     const maxSeg = maxInitiativeSegment(updatedCombatants);
     const startSeg = firstActiveSegment(updatedCombatants, maxSeg, current.inSurprisePhase);
@@ -85,7 +91,7 @@ export function renderInitiative(): HTMLElement {
 
   // Back to setup
   bar.appendChild(
-    btn('← Back to Setup', 'btn btn-ghost', () => {
+    iconBtn('fa-solid fa-arrow-left', 'Back to Setup', 'btn btn-ghost', () => {
       setState({ phase: 'setup' });
     }),
   );
@@ -98,7 +104,10 @@ export function renderInitiative(): HTMLElement {
 function buildInitiativeCard(c: Combatant, inSurprisePhase: boolean): HTMLElement {
   const isSurprised = c.isSurprised && inSurprisePhase;
   const card = el('div', {
-    cls: ['initiative-card', `type-${c.type}`, isSurprised ? 'is-surprised' : ''].join(' ').trim(),
+    cls: ['initiative-card', `type-${c.type}`,
+      isSurprised ? 'is-surprised' : '',
+      c.isHorsDeCombat ? 'is-hdc' : '',
+    ].filter(Boolean).join(' '),
   });
 
   // Name + badges
@@ -106,6 +115,8 @@ function buildInitiativeCard(c: Combatant, inSurprisePhase: boolean): HTMLElemen
   nameRow.appendChild(el('span', { cls: 'card-name', text: c.name }));
   nameRow.appendChild(el('span', { cls: `badge badge-${c.type}`, text: c.type }));
   if (isSurprised) nameRow.appendChild(el('span', { cls: 'badge badge-surprised', text: 'SURPRISED' }));
+  if (c.isHorsDeCombat) nameRow.appendChild(el('span', { cls: 'badge badge-hdc', text: 'HdC' }));
+  if (c.atRange) nameRow.appendChild(el('span', { cls: 'badge badge-range', text: 'Range' }));
   if (c.prevInitiative !== null && c.prevInitiative < 99) {
     nameRow.appendChild(el('span', { cls: 'prev-init-badge prev-init-badge--card', text: `last: ${c.prevInitiative}` }));
   }
@@ -114,6 +125,16 @@ function buildInitiativeCard(c: Combatant, inSurprisePhase: boolean): HTMLElemen
   if (isSurprised) {
     card.appendChild(
       el('p', { cls: 'surprised-note', text: 'Cannot act during surprise segments.' }),
+    );
+    return card;
+  }
+
+  if (c.isHorsDeCombat) {
+    card.appendChild(el('p', { cls: 'hdc-note', text: 'Hors de combat — will not act this round.' }));
+    card.appendChild(
+      iconBtn('fa-solid fa-rotate-left', 'Mark Recovered', 'btn btn-secondary btn-sm', () => {
+        updateCombatant(c.id, { isHorsDeCombat: false });
+      }),
     );
     return card;
   }
@@ -259,13 +280,17 @@ function buildInitiativeCard(c: Combatant, inSurprisePhase: boolean): HTMLElemen
   rollInput.addEventListener('change', () => {
     const raw = parseInt(rollInput.value, 10);
     if (isNaN(raw) || raw < 1 || raw > 10) {
-      updateCombatant(c.id, { d10Roll: null, totalInitiative: null });
+      // Silent: preview already shows '\u2014'; no re-render needed
+      updateCombatantSilent(c.id, { d10Roll: null, totalInitiative: null });
       totalEl.textContent = '\u2014';
       return;
     }
     const total = calcInitiative(raw, c.modifiers);
     totalEl.textContent = String(total);
-    updateCombatant(c.id, { d10Roll: raw, totalInitiative: total });
+    // Silent: preview already correct; a full re-render here would destroy the
+    // Lock In button before its click event fires if the DM clicks immediately
+    // after entering a roll (change fires before click in the browser event order).
+    updateCombatantSilent(c.id, { d10Roll: raw, totalInitiative: total });
   });
 
   rollRow.append(rollLabel, rollInput, el('span', { cls: 'roll-arrow', text: '\u2192' }), totalEl);

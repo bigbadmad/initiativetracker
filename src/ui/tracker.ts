@@ -10,7 +10,7 @@ import {
   updateCombatantSilent,
 } from '../state.ts';
 import { sortByInitiative, getCombatantsAtSegment, nextActiveSegment, maxInitiativeSegment } from '../combat.ts';
-import { el, btn } from './components.ts';
+import { el, iconBtn, faIcon } from './components.ts';
 
 // -- Render combat tracker -----------------------------------------------------
 
@@ -30,7 +30,10 @@ export function renderTracker(): HTMLElement {
   // -- Header ------------------------------------------------------------------
   const header = el('header', { cls: 'screen-header' });
   const phaseLabel = inSurprisePhase ? 'Surprise Phase' : `Round ${roundNumber}`;
-  header.appendChild(el('h1', { text: '⚔ Combat Tracker' }));
+  const h1 = el('h1');
+  h1.appendChild(faIcon('fa-solid fa-swords'));
+  h1.appendChild(document.createTextNode(' Combat Tracker'));
+  header.appendChild(h1);
   header.appendChild(el('p', { cls: 'subtitle', text: phaseLabel }));
   root.appendChild(header);
 
@@ -49,7 +52,7 @@ export function renderTracker(): HTMLElement {
   } else {
     active.forEach((c) => {
       const isActing = actingNow.some((a) => a.id === c.id);
-      leftCol.appendChild(buildCombatantCard(c, isActing, inSurprisePhase));
+      leftCol.appendChild(buildCombatantCard(c, isActing, inSurprisePhase, combatants));
     });
   }
 
@@ -89,8 +92,37 @@ export function renderTracker(): HTMLElement {
         callout.appendChild(el('span', { cls: 'callout-action', text: displayAction }));
       }
 
-      // Combat reference stats — AC for players to know what they need to roll;
-      // attacks/damage for the DM to know what to roll when the monster strikes.
+      // Monster: show its assigned target PC
+      if (c.type !== 'player' && c.targetId) {
+        const target = combatants.find((x) => x.id === c.targetId);
+        if (target) {
+          const targetRow = el('span', { cls: 'callout-engagement' });
+          targetRow.appendChild(faIcon('fa-solid fa-arrow-right'));
+          targetRow.appendChild(document.createTextNode(' ' + target.name));
+          callout.appendChild(targetRow);
+        }
+      }
+      // Player: show which monsters are attacking them
+      if (c.type === 'player') {
+        const attackers = combatants.filter(
+          (m) => m.type !== 'player' && m.isActive && m.targetId === c.id,
+        );
+        if (attackers.length > 0) {
+          const atRow = el('span', { cls: 'callout-engagement callout-targeted-by' });
+          atRow.appendChild(faIcon('fa-solid fa-skull'));
+          atRow.appendChild(document.createTextNode(' ' + attackers.map((a) => a.name).join(', ')));
+          callout.appendChild(atRow);
+        }
+      }
+      // Range indicator
+      if (c.atRange) {
+        const rangeRow = el('span', { cls: 'callout-range' });
+        rangeRow.appendChild(faIcon('fa-solid fa-bullseye'));
+        rangeRow.appendChild(document.createTextNode(' At range'));
+        callout.appendChild(rangeRow);
+      }
+
+      // Combat reference stats — AC for players; attacks/damage for the DM
       const combatParts: string[] = [];
       if (c.ac !== undefined) combatParts.push(`AC ${c.ac}`);
       if (c.attacks && c.damage) combatParts.push(`${c.attacks} att (${c.damage})`);
@@ -113,7 +145,7 @@ export function renderTracker(): HTMLElement {
   }
 
   // Ties notice
-  const tiedGroups = findTies(active.filter((c) => !c.isSurprised));
+  const tiedGroups = findTies(active.filter((c) => !c.isSurprised && !c.isHorsDeCombat));
   if (tiedGroups.length > 0) {
     const tieNotice = el('div', { cls: 'notice notice-info' });
     tieNotice.appendChild(el('strong', { text: 'Simultaneous action: ' }));
@@ -133,13 +165,13 @@ export function renderTracker(): HTMLElement {
   const nextSeg = nextActiveSegment(combatants, currentSegment, maxSegment, inSurprisePhase);
 
   if (nextSeg !== null) {
-    const advanceBtn = btn(`Next: Segment ${nextSeg} →`, 'btn btn-primary btn-advance', () => {
+    const advanceBtn = iconBtn('fa-solid fa-arrow-right', `Next: Seg ${nextSeg}`, 'btn btn-primary btn-advance', () => {
       setState({ currentSegment: nextSeg });
     });
     advanceBtn.dataset.advanceBtn = '1';
     actions.appendChild(advanceBtn);
   } else {
-    const roundBtn = btn('Next Round →', 'btn btn-primary btn-advance', () => {
+    const roundBtn = iconBtn('fa-solid fa-forward-step', 'Next Round', 'btn btn-primary btn-advance', () => {
       startNewRound();
     });
     roundBtn.dataset.advanceBtn = '1';
@@ -147,13 +179,13 @@ export function renderTracker(): HTMLElement {
   }
 
   actions.appendChild(
-    btn('← Re-enter Initiative', 'btn btn-secondary', () => {
+    iconBtn('fa-solid fa-arrow-left', 'Re-enter Initiative', 'btn btn-secondary', () => {
       setState({ phase: 'initiative' });
     }),
   );
 
   actions.appendChild(
-    btn('End Encounter', 'btn btn-ghost', () => {
+    iconBtn('fa-solid fa-flag-checkered', 'End Encounter', 'btn btn-ghost', () => {
       if (confirm('End this encounter and return to setup?')) {
         resetEncounter();
       }
@@ -161,7 +193,10 @@ export function renderTracker(): HTMLElement {
   );
 
   // Keyboard hint
-  const kbHint = el('p', { cls: 'kb-hint', text: 'Space / → advances segments' });
+  const kbHint = el('p', { cls: 'kb-hint' });
+  kbHint.appendChild(document.createTextNode('Space / '));
+  kbHint.appendChild(faIcon('fa-solid fa-arrow-right'));
+  kbHint.appendChild(document.createTextNode(' advances segments'));
   actions.appendChild(kbHint);
 
   return root;
@@ -173,6 +208,7 @@ function buildCombatantCard(
   c: Combatant,
   isActing: boolean,
   inSurprisePhase: boolean,
+  allCombatants: Combatant[],
 ): HTMLElement {
   const isSurprisedThisPhase = inSurprisePhase && c.isSurprised;
 
@@ -182,6 +218,7 @@ function buildCombatantCard(
       `type-${c.type}`,
       isActing ? 'is-acting' : '',
       isSurprisedThisPhase ? 'is-surprised-inactive' : '',
+      c.isHorsDeCombat ? 'is-hdc' : '',
     ]
       .filter(Boolean)
       .join(' '),
@@ -197,7 +234,10 @@ function buildCombatantCard(
   badgeCol.appendChild(initBadge);
 
   if (c.prevInitiative !== null && c.prevInitiative < 99) {
-    badgeCol.appendChild(el('span', { cls: 'prev-init-badge', text: `↑${c.prevInitiative}` }));
+    const prevBadge = el('span', { cls: 'prev-init-badge' });
+    prevBadge.appendChild(faIcon('fa-solid fa-clock-rotate-left'));
+    prevBadge.appendChild(document.createTextNode(' ' + c.prevInitiative));
+    badgeCol.appendChild(prevBadge);
   }
 
   card.appendChild(badgeCol);
@@ -222,9 +262,17 @@ function buildCombatantCard(
   nameInput.addEventListener('keydown', (e) => { e.stopPropagation(); });
   nameRow.appendChild(nameInput);
 
-  if (isActing) nameRow.appendChild(el('span', { cls: 'acting-indicator', text: '⚔' }));
+  if (isActing) {
+    const ind = el('span', { cls: 'acting-indicator' });
+    ind.appendChild(faIcon('fa-solid fa-swords'));
+    nameRow.appendChild(ind);
+  }
   if (isSurprisedThisPhase)
     nameRow.appendChild(el('span', { cls: 'badge badge-surprised', text: 'SURPRISED' }));
+  if (c.isHorsDeCombat)
+    nameRow.appendChild(el('span', { cls: 'badge badge-hdc', text: 'HdC' }));
+  if (c.atRange)
+    nameRow.appendChild(el('span', { cls: 'badge badge-range', text: 'Range' }));
   nameBlock.appendChild(nameRow);
 
   // Weapon / spell modifier labels (e.g. "Longsword", "Magic Missile")
@@ -255,7 +303,95 @@ function buildCombatantCard(
     card.appendChild(buildHpControls(c));
   }
 
+  // Status toggles: range/melee and hors de combat
+  const toggleWrap = el('div', { cls: 'card-status-toggles' });
+
+  toggleWrap.appendChild(
+    iconBtn(
+      'fa-solid fa-bullseye',
+      '',
+      c.atRange ? 'btn btn-range btn-range-active' : 'btn btn-range',
+      () => updateCombatant(c.id, { atRange: !c.atRange }),
+      c.atRange ? 'Switch to melee' : 'Switch to ranged',
+    ),
+  );
+
+  toggleWrap.appendChild(
+    iconBtn(
+      c.isHorsDeCombat ? 'fa-solid fa-rotate-left' : 'fa-solid fa-user-slash',
+      '',
+      c.isHorsDeCombat ? 'btn btn-hdc btn-hdc-active' : 'btn btn-hdc',
+      () => updateCombatant(c.id, { isHorsDeCombat: !c.isHorsDeCombat }),
+      c.isHorsDeCombat ? 'Mark as recovered' : 'Mark hors de combat',
+    ),
+  );
+
+  card.appendChild(toggleWrap);
+
+  // Monster: target PC selector (one-tap assignment)
+  if (c.type !== 'player') {
+    const players = allCombatants.filter((x) => x.type === 'player' && x.isActive);
+    if (players.length > 0) card.appendChild(buildTargetSelector(c, players));
+  }
+
+  // Player: show which monsters are attacking them (derived, read-only)
+  const attackedBy = buildAttackedBy(c, allCombatants);
+  if (attackedBy) card.appendChild(attackedBy);
+
   return card;
+}
+
+// -- Target PC selector (monsters only) ----------------------------------------
+
+function buildTargetSelector(c: Combatant, players: Combatant[]): HTMLElement {
+  const row = el('div', { cls: 'target-selector' });
+
+  const label = el('span', { cls: 'target-selector-label' });
+  label.appendChild(faIcon('fa-solid fa-arrow-right'));
+  row.appendChild(label);
+
+  players.forEach((p) => {
+    const isSelected = c.targetId === p.id;
+    const b = el('button', {
+      cls: `target-pc-btn${isSelected ? ' target-pc-btn-selected' : ''}`,
+      text: p.name,
+    });
+    b.addEventListener('click', () => {
+      // Clicking the already-selected PC deselects; clicking another assigns
+      updateCombatant(c.id, { targetId: isSelected ? null : p.id });
+    });
+    row.appendChild(b);
+  });
+
+  return row;
+}
+
+// -- Attacked-by display (players only, derived) --------------------------------
+
+function buildAttackedBy(c: Combatant, allCombatants: Combatant[]): HTMLElement | null {
+  if (c.type !== 'player') return null;
+
+  const attackers = allCombatants.filter(
+    (m) => m.type !== 'player' && m.isActive && m.targetId === c.id,
+  );
+  if (attackers.length === 0) return null;
+
+  const row = el('div', { cls: 'attacked-by-row' });
+
+  const label = el('span', { cls: 'attacked-by-label' });
+  label.appendChild(faIcon('fa-solid fa-skull'));
+  row.appendChild(label);
+
+  attackers.forEach((m) => {
+    const chip = el('span', { cls: `attacker-chip${m.atRange ? ' at-range' : ''}`, text: m.name });
+    if (m.atRange) {
+      chip.appendChild(document.createTextNode(' '));
+      chip.appendChild(faIcon('fa-solid fa-bullseye'));
+    }
+    row.appendChild(chip);
+  });
+
+  return row;
 }
 
 // -- HP controls ---------------------------------------------------------------
@@ -285,14 +421,14 @@ function buildHpControls(c: Combatant): HTMLElement {
   // Prevent space from advancing segments while typing a damage value
   dmgInput.addEventListener('keydown', (e) => e.stopPropagation());
 
-  const dmgBtn = btn('−HP', 'btn btn-damage', () => {
+  const dmgBtn = iconBtn('fa-solid fa-heart-crack', 'Dmg', 'btn btn-damage', () => {
     const amount = parseInt(dmgInput.value, 10);
     if (isNaN(amount) || amount <= 0) return;
     applyDamage(c.id, amount);
     dmgInput.value = '';
   });
 
-  const healBtn = btn('+HP', 'btn btn-heal', () => {
+  const healBtn = iconBtn('fa-solid fa-heart-pulse', 'Heal', 'btn btn-heal', () => {
     const amount = parseInt(dmgInput.value, 10);
     if (isNaN(amount) || amount <= 0) return;
     applyHealing(c.id, amount);

@@ -27,10 +27,13 @@ function loadPersistedState(): AppState {
     if (!raw) return structuredClone(initialState);
     const parsed = JSON.parse(raw) as Partial<AppState>;
     if (!parsed.phase || !Array.isArray(parsed.combatants)) return structuredClone(initialState);
-    // Migrate: ensure prevInitiative exists for saves that predate the field
+    // Migrate: ensure fields added after initial release exist in old saves
     const combatants: Combatant[] = parsed.combatants.map((c) => ({
       ...c,
       prevInitiative: c.prevInitiative ?? null,
+      isHorsDeCombat: (c.isHorsDeCombat as boolean | undefined) ?? false,
+      atRange: (c.atRange as boolean | undefined) ?? false,
+      targetId: (c.targetId as string | null | undefined) ?? null,
     }));
     return { ...structuredClone(initialState), ...parsed, combatants };
   } catch {
@@ -122,7 +125,9 @@ export function applyDamage(id: string, amount: number): void {
 
   const newHp = combatant.currentHp - amount;
   const newCombatants = state.combatants.map((c) =>
-    c.id === id ? { ...c, currentHp: newHp, isActive: newHp > 0 } : c,
+    c.id === id
+      ? { ...c, currentHp: newHp, isActive: newHp > 0, targetId: newHp <= 0 ? null : c.targetId }
+      : c,
   );
 
   // Check if all HP-tracked monsters/NPCs are now defeated
@@ -131,7 +136,7 @@ export function applyDamage(id: string, amount: number): void {
     // Return to setup keeping only players, reset their round state
     const players = newCombatants
       .filter((c) => c.type === 'player')
-      .map((c) => ({ ...c, d10Roll: null, totalInitiative: null, prevInitiative: null, isSurprised: false, isActive: true, action: '' }));
+      .map((c) => ({ ...c, d10Roll: null, totalInitiative: null, prevInitiative: null, isSurprised: false, isHorsDeCombat: false, atRange: false, targetId: null, isActive: true, action: '' }));
     state = { ...initialState, combatants: players };
   } else {
     state = { ...state, combatants: newCombatants };
@@ -151,10 +156,13 @@ export function applyHealing(id: string, amount: number): void {
 
 /** Replace the entire app state (used for JSON import). */
 export function importState(newState: AppState): void {
-  // Migrate: ensure prevInitiative exists on all combatants in the imported file
+  // Migrate: ensure fields added after initial release exist in imported files
   const combatants: Combatant[] = newState.combatants.map((c) => ({
     ...c,
     prevInitiative: c.prevInitiative ?? null,
+    isHorsDeCombat: (c.isHorsDeCombat as boolean | undefined) ?? false,
+    atRange: (c.atRange as boolean | undefined) ?? false,
+    targetId: (c.targetId as string | null | undefined) ?? null,
   }));
   state = { ...newState, combatants };
   notify();
@@ -209,6 +217,15 @@ export function startNewRound(): void {
     combatants: withAutoRolledMonsters(cleared),
   };
   notify();
+}
+
+/**
+ * Trigger a re-render without changing state.
+ * Use only for local UI state changes (e.g. opening/closing the engagement picker)
+ * that need the DOM to rebuild but don't modify any app data.
+ */
+export function forceRender(): void {
+  onStateChange?.();
 }
 
 /** Full reset - back to setup with a blank slate. */

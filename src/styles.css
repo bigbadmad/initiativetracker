@@ -184,6 +184,8 @@ label {
 .badge-npc     { background: #2a1a3d; color: #c07ee0; border: 1px solid var(--purple); }
 .badge-hp      { background: #1a3d1a; color: #7ee07e; border: 1px solid var(--green); }
 .badge-surprised { background: #3d3300; color: #ffd966; border: 1px solid #c8a000; }
+.badge-hdc       { background: #1a0a2a; color: #b07ee0; border: 1px solid #7a4aaa; }
+.badge-range     { background: #002a2a; color: #7ee0e0; border: 1px solid #2a8a8a; }
 
 .chip {
   display: inline-block;
@@ -442,6 +444,10 @@ label {
 .card-mods { font-size: 0.82rem; color: var(--amber-dim); margin-bottom: 0; }
 .card-mod-detail { font-size: 0.75rem; color: var(--text-muted); font-style: italic; }
 .surprised-note { font-size: 0.82rem; color: #ffd966; font-style: italic; }
+.hdc-note       { font-size: 0.82rem; color: #b07ee0; font-style: italic; }
+
+/* HdC card state in initiative screen */
+.initiative-card.is-hdc { opacity: 0.6; border-left-color: #7a4aaa; }
 
 .roll-row {
   display: flex;
@@ -509,6 +515,137 @@ label {
   box-shadow: 0 0 12px rgba(200,164,90,0.3);
 }
 .tracker-card.is-surprised-inactive { opacity: 0.45; }
+.tracker-card.is-hdc {
+  opacity: 0.6;
+  border-left-style: dashed;
+  border-left-color: #7a4aaa;
+}
+
+/* Card status toggles (range + HdC) — grouped on right side */
+.card-status-toggles {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+  align-self: flex-start;
+  padding-top: 2px;
+}
+
+/* Range toggle button */
+.btn-range {
+  padding: 4px 8px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  border-radius: var(--radius);
+}
+.btn-range:hover { border-color: #2a8a8a; color: #7ee0e0; background: transparent; }
+.btn-range-active { border-color: #2a8a8a; color: #7ee0e0; background: #001a1a; }
+.btn-range-active:hover { background: #002626; }
+
+/* Target PC selector — full-width row on monster cards */
+.target-selector {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding-top: 7px;
+  border-top: 1px solid var(--border);
+}
+
+.target-selector-label {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+/* PC name buttons on the monster target selector */
+.target-pc-btn {
+  padding: 2px 11px;
+  border-radius: 99px;
+  font-size: 0.75rem;
+  background: transparent;
+  border: 1px solid var(--border-light);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all var(--transition);
+}
+.target-pc-btn:hover { border-color: var(--blue); color: #7ec8e3; }
+.target-pc-btn-selected {
+  background: #0a1a2a;
+  border-color: var(--blue);
+  color: #7ec8e3;
+  font-weight: bold;
+}
+
+/* Attacked-by row — full-width row on player cards */
+.attacked-by-row {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding-top: 7px;
+  border-top: 1px solid var(--border);
+}
+
+.attacked-by-label {
+  color: var(--red-light);
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.attacker-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: 99px;
+  font-size: 0.72rem;
+  background: #1e0a0a;
+  border: 1px solid var(--red);
+  color: #e07070;
+}
+.attacker-chip.at-range {
+  background: #001a1a;
+  border-color: #2a8a8a;
+  color: #7ee0e0;
+}
+
+/* Acting callout — engagement + range lines */
+.callout-engagement,
+.callout-targeted-by,
+.callout-range {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.8rem;
+  padding-left: 4px;
+  margin-top: 1px;
+}
+.callout-engagement   { color: var(--text-muted); }
+.callout-targeted-by  { color: var(--red-light); }
+.callout-range        { color: #7ee0e0; }
+
+/* HdC toggle button on tracker cards */
+.btn-hdc {
+  padding: 4px 8px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  border-radius: var(--radius);
+  flex-shrink: 0;
+}
+.btn-hdc:hover { border-color: #7a4aaa; color: #b07ee0; background: transparent; }
+.btn-hdc-active {
+  border-color: #7a4aaa;
+  color: #b07ee0;
+  background: #120a1e;
+}
+.btn-hdc-active:hover { background: #1a0f2a; }
 
 .init-badge {
   display: inline-flex;
