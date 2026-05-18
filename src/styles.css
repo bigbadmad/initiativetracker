@@ -242,6 +242,24 @@ label {
 /* Wrap pairs the row with its optional inline edit panel */
 .combatant-row-wrap { display: flex; flex-direction: column; }
 
+/* Drag-to-reorder */
+.drag-handle {
+  color: var(--text-muted);
+  cursor: grab;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0 2px;
+  user-select: none;
+  flex-shrink: 0;
+}
+.drag-handle:active { cursor: grabbing; }
+.combatant-row-wrap.is-dragging { opacity: 0.35; }
+.combatant-row-wrap.drag-over .combatant-row {
+  border-color: var(--amber);
+  outline: 2px dashed var(--amber-dim);
+  outline-offset: -2px;
+}
+
 /* Right-side controls (surprised toggle + edit btn + remove btn) */
 .combatant-controls {
   display: flex;
@@ -307,6 +325,21 @@ label {
   white-space: nowrap;
 }
 .surprise-toggle input { width: auto; }
+
+/* Section header with inline toolbar (Export / Import) */
+.section-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.section-header-row h2 { margin-bottom: 0; }
+
+.setup-toolbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.btn-toolbar { padding: 5px 12px; font-size: 0.82rem; }
+.import-file-input { display: none; }
 
 /* Add forms */
 .add-forms-row {
@@ -497,13 +530,7 @@ label {
   color: var(--amber-light);
 }
 
-.card-name-block {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
+/* .card-name-block is defined in the tracker section below */
 .acting-indicator { color: var(--amber); font-size: 1rem; }
 
 /* HP controls */
@@ -558,6 +585,100 @@ label {
 }
 .defeated-name { color: var(--text-muted); }
 .defeated-hp   { color: var(--red-light); font-size: 0.82rem; }
+
+/* Initiative badge column: current round on top, previous round below */
+.init-badge-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.prev-init-badge {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-style: italic;
+  line-height: 1;
+}
+/* Variant used in the initiative entry cards (sits inline in the name row) */
+.prev-init-badge--card {
+  font-size: 0.72rem;
+  padding: 1px 6px;
+  background: var(--bg-card-alt);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  font-style: normal;
+}
+
+/* Card name block — column layout so combat info sits below the name */
+.card-name-block {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* Inner flex row: name input + acting indicator + surprised badge */
+.card-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+/* Combat reference line: AC · N att (dice) · THAC0 */
+.card-combat-info {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-style: italic;
+  line-height: 1.3;
+}
+
+/* Same info surfaced in the acting callout */
+.callout-combat-info {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--amber-dim);
+  font-weight: bold;
+  padding-left: 4px;
+  margin-top: 2px;
+}
+
+/* Inline-editable name in tracker cards */
+.card-name-input {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-bright);
+  font-weight: bold;
+  font-family: inherit;
+  font-size: 1rem;
+  padding: 2px 5px;
+  min-width: 60px;
+  max-width: 180px;
+  width: auto;
+  flex-shrink: 1;
+  transition: border-color var(--transition), background var(--transition);
+}
+.card-name-input:hover { border-color: var(--border); }
+.card-name-input:focus {
+  border-color: var(--amber-dim);
+  background: var(--bg-input);
+  outline: none;
+}
+
+/* Keyboard shortcut hint below the action buttons */
+.kb-hint {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+  margin: 0;
+}
 
 /* Right column */
 .tracker-right {
@@ -717,6 +838,137 @@ label {
   cursor: default;
 }
 .form-row-inline input:last-child { width: 54px; }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   MONSTER LIBRARY MODAL
+══════════════════════════════════════════════════════════════════════════════ */
+
+/* Modal backdrop */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+
+/* Modal panel */
+.modal-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 60px rgba(0, 0, 0, 0.85);
+  width: min(960px, 100%);
+  height: min(680px, 90vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Modal header: title + search + close */
+.modal-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.modal-title { margin: 0; flex-shrink: 0; font-size: 1.15rem; }
+.modal-search { flex: 1; }
+.modal-close-btn { flex-shrink: 0; padding: 4px 10px; }
+
+/* Tag filter row */
+.modal-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.filter-btn {
+  padding: 3px 12px;
+  font-size: 0.8rem;
+  background: var(--bg-card-alt);
+  border-color: var(--border);
+  color: var(--text-muted);
+  border-radius: 99px;
+}
+.filter-btn:hover { border-color: var(--amber-dim); color: var(--amber); background: var(--bg-card-alt); }
+.filter-active {
+  background: #3a2c10 !important;
+  border-color: var(--amber) !important;
+  color: var(--amber-light) !important;
+}
+
+/* Scrollable monster list */
+.modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+}
+.library-list { display: flex; flex-direction: column; }
+.library-empty { padding: 20px 16px; }
+
+/* One monster row */
+.library-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--border);
+  transition: background var(--transition);
+}
+.library-row:hover { background: var(--bg-card-alt); }
+.library-row:last-child { border-bottom: none; }
+
+.library-row-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* Monster name */
+.lib-name {
+  font-weight: bold;
+  color: var(--text-bright);
+  font-size: 0.95rem;
+}
+
+/* Stat chips row */
+.lib-stats { display: flex; flex-wrap: wrap; gap: 4px; }
+.lib-stat {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  padding: 1px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.lib-stat--atk { color: var(--amber-dim); border-color: var(--border-light); }
+
+/* Notes line */
+.lib-notes {
+  font-size: 0.72rem;
+  color: var(--amber-dim);
+  font-style: italic;
+  line-height: 1.4;
+}
+
+/* Select button */
+.btn-lib-select { flex-shrink: 0; align-self: flex-start; margin-top: 2px; }
+.btn-sm { padding: 4px 12px; font-size: 0.82rem; }
+
+/* Browse library trigger button (inside add-monster card) */
+.btn-library { width: 100%; margin-bottom: 10px; }
 
 /* -- Scrollbar --------------------------------------------------------------- */
 ::-webkit-scrollbar { width: 6px; }

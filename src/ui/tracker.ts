@@ -1,4 +1,4 @@
-﻿import type { Combatant } from '../types.ts';
+import type { Combatant } from '../types.ts';
 import {
   getState,
   setState,
@@ -6,6 +6,8 @@ import {
   applyHealing,
   startNewRound,
   resetEncounter,
+  updateCombatant,
+  updateCombatantSilent,
 } from '../state.ts';
 import { sortByInitiative, getCombatantsAtSegment, nextActiveSegment, maxInitiativeSegment } from '../combat.ts';
 import { el, btn } from './components.ts';
@@ -77,13 +79,27 @@ export function renderTracker(): HTMLElement {
     actingNow.forEach((c) => {
       const nameSpan = el('span', { cls: `callout-name type-${c.type}`, text: c.name });
       callout.appendChild(nameSpan);
-      // Show declared action, falling back to the weapon/spell modifier label from setup
+
+      // Declared action label (weapon/spell name)
       const fallbackMod = c.modifiers.find(
         (m) => m.kind === 'weapon_speed' || m.kind === 'spell_casting',
       );
       const displayAction = c.action || fallbackMod?.label;
       if (displayAction) {
         callout.appendChild(el('span', { cls: 'callout-action', text: displayAction }));
+      }
+
+      // Combat reference stats — AC for players to know what they need to roll;
+      // attacks/damage for the DM to know what to roll when the monster strikes.
+      const combatParts: string[] = [];
+      if (c.ac !== undefined) combatParts.push(`AC ${c.ac}`);
+      if (c.attacks && c.damage) combatParts.push(`${c.attacks} att (${c.damage})`);
+      else if (c.damage) combatParts.push(c.damage);
+      if (c.thac0 !== undefined) combatParts.push(`THAC0 ${c.thac0}`);
+      if (combatParts.length > 0) {
+        callout.appendChild(
+          el('span', { cls: 'callout-combat-info', text: combatParts.join(' · ') }),
+        );
       }
     });
     rightCol.appendChild(callout);
@@ -117,22 +133,17 @@ export function renderTracker(): HTMLElement {
   const nextSeg = nextActiveSegment(combatants, currentSegment, maxSegment, inSurprisePhase);
 
   if (nextSeg !== null) {
-    actions.appendChild(
-      btn(`Next: Segment ${nextSeg} →`, 'btn btn-primary btn-advance', () => {
-        setState({ currentSegment: nextSeg });
-      }),
-    );
+    const advanceBtn = btn(`Next: Segment ${nextSeg} →`, 'btn btn-primary btn-advance', () => {
+      setState({ currentSegment: nextSeg });
+    });
+    advanceBtn.dataset.advanceBtn = '1';
+    actions.appendChild(advanceBtn);
   } else {
-    const confirmMsg = inSurprisePhase
-      ? 'End the surprise round and begin initiative for Round 1?'
-      : `End round ${roundNumber} and begin initiative for round ${roundNumber + 1}?`;
-    actions.appendChild(
-      btn('Next Round →', 'btn btn-primary btn-advance', () => {
-        if (confirm(confirmMsg)) {
-          startNewRound();
-        }
-      }),
-    );
+    const roundBtn = btn('Next Round →', 'btn btn-primary btn-advance', () => {
+      startNewRound();
+    });
+    roundBtn.dataset.advanceBtn = '1';
+    actions.appendChild(roundBtn);
   }
 
   actions.appendChild(
@@ -148,6 +159,10 @@ export function renderTracker(): HTMLElement {
       }
     }),
   );
+
+  // Keyboard hint
+  const kbHint = el('p', { cls: 'kb-hint', text: 'Space / → advances segments' });
+  actions.appendChild(kbHint);
 
   return root;
 }
@@ -172,21 +187,47 @@ function buildCombatantCard(
       .join(' '),
   });
 
-  // Initiative badge
+  // Initiative badge column (current + previous round)
+  const badgeCol = el('div', { cls: 'init-badge-col' });
+
   const initBadge = el('span', {
     cls: 'init-badge',
     text: c.totalInitiative !== null && c.totalInitiative < 99 ? String(c.totalInitiative) : '-',
   });
-  card.appendChild(initBadge);
+  badgeCol.appendChild(initBadge);
 
-  // Name + type + acting indicator
+  if (c.prevInitiative !== null && c.prevInitiative < 99) {
+    badgeCol.appendChild(el('span', { cls: 'prev-init-badge', text: `↑${c.prevInitiative}` }));
+  }
+
+  card.appendChild(badgeCol);
+
+  // Name block — column layout: top row (name + indicators) + info rows
   const nameBlock = el('div', { cls: 'card-name-block' });
-  nameBlock.appendChild(el('span', { cls: 'card-name', text: c.name }));
-  if (isActing) nameBlock.appendChild(el('span', { cls: 'acting-indicator', text: '\u2694' }));
-  if (isSurprisedThisPhase)
-    nameBlock.appendChild(el('span', { cls: 'badge badge-surprised', text: 'SURPRISED' }));
 
-  // Show weapon / spell modifier labels from setup (e.g. "Longsword", "Magic Missile")
+  // Top row: inline-editable name + acting indicator + surprised badge
+  const nameRow = el('div', { cls: 'card-name-row' });
+
+  const nameInput = el('input', {
+    cls: 'card-name-input',
+    attrs: { type: 'text', value: c.name, 'aria-label': 'Combatant name' },
+  }) as HTMLInputElement;
+  nameInput.addEventListener('input', () => {
+    updateCombatantSilent(c.id, { name: nameInput.value });
+  });
+  nameInput.addEventListener('change', () => {
+    updateCombatant(c.id, { name: nameInput.value });
+  });
+  // Prevent space from triggering global keyboard nav while typing
+  nameInput.addEventListener('keydown', (e) => { e.stopPropagation(); });
+  nameRow.appendChild(nameInput);
+
+  if (isActing) nameRow.appendChild(el('span', { cls: 'acting-indicator', text: '⚔' }));
+  if (isSurprisedThisPhase)
+    nameRow.appendChild(el('span', { cls: 'badge badge-surprised', text: 'SURPRISED' }));
+  nameBlock.appendChild(nameRow);
+
+  // Weapon / spell modifier labels (e.g. "Longsword", "Magic Missile")
   const actionMods = c.modifiers.filter(
     (m) => m.kind === 'weapon_speed' || m.kind === 'spell_casting' || m.kind === 'other',
   );
@@ -195,6 +236,18 @@ function buildCombatantCard(
       el('span', { cls: 'card-modifier-label', text: actionMods.map((m) => m.label).join(', ') }),
     );
   }
+
+  // Combat reference line from library data: AC · attacks (damage) · THAC0
+  if (c.ac !== undefined || c.attacks || c.damage || c.thac0 !== undefined) {
+    const parts: string[] = [];
+    if (c.ac !== undefined) parts.push(`AC ${c.ac}`);
+    if (c.attacks && c.damage) parts.push(`${c.attacks} att (${c.damage})`);
+    else if (c.attacks) parts.push(`${c.attacks} att`);
+    else if (c.damage) parts.push(c.damage);
+    if (c.thac0 !== undefined) parts.push(`THAC0 ${c.thac0}`);
+    nameBlock.appendChild(el('span', { cls: 'card-combat-info', text: parts.join(' · ') }));
+  }
+
   card.appendChild(nameBlock);
 
   // HP controls (monsters/NPCs only)
@@ -229,6 +282,8 @@ function buildHpControls(c: Combatant): HTMLElement {
       'aria-label': 'Damage amount',
     },
   }) as HTMLInputElement;
+  // Prevent space from advancing segments while typing a damage value
+  dmgInput.addEventListener('keydown', (e) => e.stopPropagation());
 
   const dmgBtn = btn('−HP', 'btn btn-damage', () => {
     const amount = parseInt(dmgInput.value, 10);

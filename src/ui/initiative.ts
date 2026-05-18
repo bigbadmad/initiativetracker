@@ -106,6 +106,9 @@ function buildInitiativeCard(c: Combatant, inSurprisePhase: boolean): HTMLElemen
   nameRow.appendChild(el('span', { cls: 'card-name', text: c.name }));
   nameRow.appendChild(el('span', { cls: `badge badge-${c.type}`, text: c.type }));
   if (isSurprised) nameRow.appendChild(el('span', { cls: 'badge badge-surprised', text: 'SURPRISED' }));
+  if (c.prevInitiative !== null && c.prevInitiative < 99) {
+    nameRow.appendChild(el('span', { cls: 'prev-init-badge prev-init-badge--card', text: `last: ${c.prevInitiative}` }));
+  }
   card.appendChild(nameRow);
 
   if (isSurprised) {

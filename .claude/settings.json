@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\mad\\\\Documents\\\\GitHub\\\\initiativetracker\" -Recurse)",
+      "Bash(Select-Object -Property FullName, PSIsContainer)",
+      "Bash(ConvertTo-Json)",
+      "Bash(npm install *)",
+      "Bash(npm test *)",
+      "Bash(node_modules\\\\.bin\\\\vitest run *)",
+      "Bash(npx tsc *)",
+      "Bash(echo \"EXIT:$?\")"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\mad\\.claude\\projects\\c--Users-mad-Documents-GitHub-initiativetracker\\memory"
+    ]
+  }
+}

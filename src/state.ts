@@ -1,4 +1,4 @@
-﻿import type { AppState, Combatant } from './types.ts';
+import type { AppState, Combatant } from './types.ts';
 import { calcInitiative, rollD10 } from './combat.ts';
 
 // -- Initial state -------------------------------------------------------------
@@ -11,9 +11,36 @@ const initialState: AppState = {
   inSurprisePhase: false,
 };
 
+// -- localStorage persistence --------------------------------------------------
+
+const STORAGE_KEY = 'adnd-tracker';
+
+function persistState(s: AppState): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+  } catch { /* quota exceeded or unavailable */ }
+}
+
+function loadPersistedState(): AppState {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return structuredClone(initialState);
+    const parsed = JSON.parse(raw) as Partial<AppState>;
+    if (!parsed.phase || !Array.isArray(parsed.combatants)) return structuredClone(initialState);
+    // Migrate: ensure prevInitiative exists for saves that predate the field
+    const combatants: Combatant[] = parsed.combatants.map((c) => ({
+      ...c,
+      prevInitiative: c.prevInitiative ?? null,
+    }));
+    return { ...structuredClone(initialState), ...parsed, combatants };
+  } catch {
+    return structuredClone(initialState);
+  }
+}
+
 // -- State singleton -----------------------------------------------------------
 
-let state: AppState = structuredClone(initialState);
+let state: AppState = loadPersistedState();
 
 /** Registered render callback - set by main.ts. */
 let onStateChange: (() => void) | null = null;
@@ -23,6 +50,7 @@ export function registerRenderer(fn: () => void): void {
 }
 
 function notify(): void {
+  persistState(state);
   onStateChange?.();
 }
 
@@ -65,6 +93,7 @@ export function updateCombatantSilent(id: string, patch: Partial<Combatant>): vo
       c.id === id ? { ...c, ...patch } : c,
     ),
   };
+  persistState(state);
 }
 
 export function removeCombatant(id: string): void {
@@ -72,6 +101,15 @@ export function removeCombatant(id: string): void {
     ...state,
     combatants: state.combatants.filter((c) => c.id !== id),
   };
+  notify();
+}
+
+/** Move a combatant from one position to another in the list. */
+export function reorderCombatants(fromIndex: number, toIndex: number): void {
+  const next = [...state.combatants];
+  const [moved] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, moved);
+  state = { ...state, combatants: next };
   notify();
 }
 
@@ -93,7 +131,7 @@ export function applyDamage(id: string, amount: number): void {
     // Return to setup keeping only players, reset their round state
     const players = newCombatants
       .filter((c) => c.type === 'player')
-      .map((c) => ({ ...c, d10Roll: null, totalInitiative: null, isSurprised: false, isActive: true, action: '' }));
+      .map((c) => ({ ...c, d10Roll: null, totalInitiative: null, prevInitiative: null, isSurprised: false, isActive: true, action: '' }));
     state = { ...initialState, combatants: players };
   } else {
     state = { ...state, combatants: newCombatants };
@@ -109,6 +147,17 @@ export function applyHealing(id: string, amount: number): void {
 
   const newHp = Math.min(combatant.maxHp, combatant.currentHp + amount);
   updateCombatant(id, { currentHp: newHp, isActive: true });
+}
+
+/** Replace the entire app state (used for JSON import). */
+export function importState(newState: AppState): void {
+  // Migrate: ensure prevInitiative exists on all combatants in the imported file
+  const combatants: Combatant[] = newState.combatants.map((c) => ({
+    ...c,
+    prevInitiative: c.prevInitiative ?? null,
+  }));
+  state = { ...newState, combatants };
+  notify();
 }
 
 // -- Internal helper ----------------------------------------------------------
@@ -146,6 +195,7 @@ export function beginInitiativePhase(): void {
 export function startNewRound(): void {
   const cleared = state.combatants.map((c) => ({
     ...c,
+    prevInitiative: c.totalInitiative, // preserve for history display in the new round
     d10Roll: null,
     totalInitiative: null,
     isSurprised: false, // Surprised only applies to the surprise phase

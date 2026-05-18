@@ -1,4 +1,8 @@
-﻿import type { Combatant, CombatantType, Modifier, ModifierKind } from '../types.ts';
+import type { Combatant, CombatantType, Modifier, ModifierKind } from '../types.ts';
+import type { AppState } from '../types.ts';
+import { openMonsterLibrary } from './library.ts';
+import type { MonsterTemplate } from '../data/monsters.ts';
+import { rollHD } from '../data/monsters.ts';
 import {
   addCombatant,
   removeCombatant,
@@ -6,6 +10,8 @@ import {
   updateCombatantSilent,
   getState,
   beginInitiativePhase,
+  reorderCombatants,
+  importState,
 } from '../state.ts';
 import { el, btn, uid, chip, fmtSign } from './components.ts';
 
@@ -22,6 +28,14 @@ const MOD_KIND_LABELS: Record<ModifierKind, string> = {
 
 // Kinds that have no numeric value (they're flags)
 const VALUELESS_KINDS: ModifierKind[] = ['haste', 'slow'];
+
+// -- Drag state ---------------------------------------------------------------
+
+let dragId: string | null = null;
+
+// -- Last library selection (used in submit handler for per-monster HP rolling) -
+
+let lastLibraryTemplate: MonsterTemplate | null = null;
 
 // -- Build the setup screen ----------------------------------------------------
 
@@ -41,7 +55,11 @@ export function renderSetup(): HTMLElement {
   const listSection = el('section', { cls: 'combatant-list-section' });
   body.appendChild(listSection);
 
-  listSection.appendChild(el('h2', { text: 'Combatants' }));
+  // Section header with export/import toolbar
+  const sectionHeader = el('div', { cls: 'section-header-row' });
+  sectionHeader.appendChild(el('h2', { text: 'Combatants' }));
+  sectionHeader.appendChild(buildExportImportToolbar());
+  listSection.appendChild(sectionHeader);
 
   const combatantList = el('div', { cls: 'combatant-list' });
   listSection.appendChild(combatantList);
@@ -82,6 +100,61 @@ export function renderSetup(): HTMLElement {
   return root;
 }
 
+// -- Export / Import toolbar ---------------------------------------------------
+
+function buildExportImportToolbar(): HTMLElement {
+  const toolbar = el('div', { cls: 'setup-toolbar' });
+
+  // Export
+  toolbar.appendChild(
+    btn('Export JSON', 'btn btn-secondary btn-toolbar', () => {
+      const json = JSON.stringify(getState(), null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'encounter.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    }),
+  );
+
+  // Import — hidden file input triggered by a visible button
+  const fileInput = el('input', {
+    attrs: { type: 'file', accept: '.json' },
+    cls: 'import-file-input',
+  }) as HTMLInputElement;
+
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target?.result as string) as AppState;
+        if (!parsed.phase || !Array.isArray(parsed.combatants)) {
+          alert('Invalid encounter file.');
+          return;
+        }
+        importState(parsed);
+      } catch {
+        alert('Could not read encounter file.');
+      }
+    };
+    reader.readAsText(file);
+    fileInput.value = '';
+  });
+
+  const importBtn = btn('Import JSON', 'btn btn-secondary btn-toolbar', () => {
+    fileInput.click();
+  });
+
+  toolbar.appendChild(fileInput);
+  toolbar.appendChild(importBtn);
+
+  return toolbar;
+}
+
 // -- Track which combatant has its edit panel open ----------------------------
 
 let editingCombatantId: string | null = null;
@@ -92,9 +165,56 @@ function buildCombatantRow(c: Combatant, onUpdate: () => void): HTMLElement {
   const isEditing = c.id === editingCombatantId;
   const wrapper = el('div', { cls: 'combatant-row-wrap' });
 
+  // -- Drag-to-reorder ----------------------------------------------------------
+  wrapper.setAttribute('draggable', 'true');
+
+  wrapper.addEventListener('dragstart', (e) => {
+    dragId = c.id;
+    wrapper.classList.add('is-dragging');
+    (e as DragEvent).dataTransfer!.effectAllowed = 'move';
+  });
+
+  wrapper.addEventListener('dragend', () => {
+    dragId = null;
+    wrapper.classList.remove('is-dragging');
+    document.querySelectorAll<HTMLElement>('.drag-over').forEach((el) =>
+      el.classList.remove('drag-over'),
+    );
+  });
+
+  wrapper.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    (e as DragEvent).dataTransfer!.dropEffect = 'move';
+    wrapper.classList.add('drag-over');
+  });
+
+  wrapper.addEventListener('dragleave', (e) => {
+    if (!wrapper.contains((e as DragEvent).relatedTarget as Node | null)) {
+      wrapper.classList.remove('drag-over');
+    }
+  });
+
+  wrapper.addEventListener('drop', (e) => {
+    e.preventDefault();
+    wrapper.classList.remove('drag-over');
+    const fromId = dragId;
+    dragId = null;
+    if (fromId === null || fromId === c.id) return;
+    const combatants = getState().combatants;
+    const fromIndex = combatants.findIndex((x) => x.id === fromId);
+    const toIndex = combatants.findIndex((x) => x.id === c.id);
+    if (fromIndex === -1 || toIndex === -1) return;
+    reorderCombatants(fromIndex, toIndex);
+  });
+
+  // -- Main row -----------------------------------------------------------------
   const mainRow = el('div', {
     cls: ['combatant-row', `type-${c.type}`, c.isSurprised ? 'is-surprised-row' : ''],
   });
+
+  // Drag handle
+  const dragHandle = el('span', { cls: 'drag-handle', text: '⠿' });
+  mainRow.appendChild(dragHandle);
 
   const info = el('div', { cls: 'combatant-info' });
   info.appendChild(el('span', { cls: 'combatant-name', text: c.name }));
@@ -276,6 +396,19 @@ function buildAddForm(type: CombatantType, onAdd: () => void): HTMLElement {
 
   // HP + Quantity inputs (monsters only)
   let hpInput: HTMLInputElement | null = null;
+  // Browse Library button — monsters only, placed after the name input
+  if (isMonster) {
+    card.appendChild(
+      btn('📖 Browse Monster Library', 'btn btn-secondary btn-library', () => {
+        openMonsterLibrary((template) => {
+          lastLibraryTemplate = template;
+          (nameInput as HTMLInputElement).value = template.name;
+          // Roll HP from actual dice rather than using the average
+          if (hpInput) hpInput.value = String(rollHD(template.hd));
+        });
+      }),
+    );
+  }
   let qtyInput: HTMLInputElement | null = null;
   if (isMonster) {
     const hpRow = el('div', { cls: 'form-row-inline' });
@@ -285,7 +418,7 @@ function buildAddForm(type: CombatantType, onAdd: () => void): HTMLElement {
     qtyInput = el('input', {
       attrs: { type: 'number', placeholder: 'Qty', min: '1', max: '20', value: '1', id: `qty-${type}` },
     }) as HTMLInputElement;
-    const qtyLabel = el('label', { text: '\u00d7', attrs: { for: `qty-${type}`, title: 'Quantity' }, cls: 'qty-label' });
+    const qtyLabel = el('label', { text: '×', attrs: { for: `qty-${type}`, title: 'Quantity' }, cls: 'qty-label' });
     hpRow.append(hpInput, qtyLabel, qtyInput);
     card.appendChild(hpRow);
   }
@@ -363,27 +496,55 @@ function buildAddForm(type: CombatantType, onAdd: () => void): HTMLElement {
       alert('Please enter a name.');
       return;
     }
-    const maxHp = isMonster && hpInput ? parseInt(hpInput.value, 10) || null : null;
     const qty = isMonster && qtyInput ? Math.max(1, parseInt(qtyInput.value, 10) || 1) : 1;
+    const libTemplate = isMonster ? lastLibraryTemplate : null;
+
+    // Base HP from the form field (used for qty=1 or manual entry)
+    const formHp = isMonster && hpInput ? parseInt(hpInput.value, 10) || null : null;
 
     for (let i = 0; i < qty; i++) {
+      // When adding multiple from library, roll HP independently for each
+      const maxHp = libTemplate && qty > 1
+        ? rollHD(libTemplate.hd)
+        : formHp;
+
+      // Build the modifier list, auto-adding speed factor from library if present
+      const combatantMods: Modifier[] = [...mods];
+      if (libTemplate?.speed !== undefined) {
+        combatantMods.push({
+          id: uid(),
+          kind: 'weapon_speed',
+          value: libTemplate.speed,
+          label: 'Atk Speed',
+        });
+      }
+
       const combatant: Combatant = {
         id: uid(),
         name: qty > 1 ? `${name} ${i + 1}` : name,
         type,
         maxHp,
         currentHp: maxHp,
-        modifiers: [...mods],
+        modifiers: combatantMods,
         d10Roll: null,
         totalInitiative: null,
+        prevInitiative: null,
         isSurprised: false,
         isActive: true,
         action: '',
+        // Combat reference stats from the library (displayed in the tracker)
+        ...(libTemplate ? {
+          ac: libTemplate.ac,
+          attacks: libTemplate.attacks,
+          damage: libTemplate.damage,
+          thac0: libTemplate.thac0,
+        } : {}),
       };
       addCombatant(combatant);
     }
 
-    // Reset form
+    // Reset form and library state
+    lastLibraryTemplate = null;
     (nameInput as HTMLInputElement).value = '';
     if (hpInput) hpInput.value = '';
     if (qtyInput) qtyInput.value = '1';

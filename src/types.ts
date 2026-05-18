@@ -41,6 +41,17 @@ export interface Combatant {
   isActive: boolean;
   /** Free-text label for what this combatant is doing this round (persists until changed). */
   action: string;
+  /** The totalInitiative from the previous round — displayed as context during the current round. */
+  prevInitiative: number | null;
+  // -- Combat reference fields (populated from the monster library) -------------
+  /** Armor Class — shown during combat so players know what they need to hit. */
+  ac?: number;
+  /** Attack count/description, e.g. "3" or "2/1". */
+  attacks?: string;
+  /** Damage expression per attack, e.g. "1d4/1d4/2d6". */
+  damage?: string;
+  /** THAC0 — shown during combat so the DM knows the monster's to-hit baseline. */
+  thac0?: number;
 }
 
 // -- Application phases -------------------------------------------------------
