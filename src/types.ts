@@ -63,6 +63,13 @@ export interface Combatant {
   damage?: string;
   /** THAC0 — shown during combat so the DM knows the monster's to-hit baseline. */
   thac0?: number;
+  // -- Loot & XP fields (set manually when not using the library) ---------------
+  /** Individual treasure type expression (e.g. "Q×3"). Used when monster is not in the library. */
+  individualTreasure?: string;
+  /** Lair treasure type letter (e.g. "D"). Used when monster is not in the library. */
+  lairTreasure?: string;
+  /** Manual XP per kill. When set, overrides the HD-based XP calculation. */
+  manualXP?: number;
 }
 
 // -- Application phases -------------------------------------------------------

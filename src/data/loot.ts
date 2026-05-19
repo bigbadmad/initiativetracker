@@ -444,7 +444,7 @@ function stripNumber(name: string): string {
  * plus the unique set of lair types to prompt the DM to roll for lair treasure.
  */
 export function generateLoot(
-  defeated: Array<{ name: string }>,
+  defeated: Array<{ name: string; individualTreasure?: string; lairTreasure?: string; manualXP?: number }>,
 ): LootResult {
   const coins = zeros();
   const gems: string[] = [];
@@ -468,18 +468,19 @@ export function generateLoot(
     const template = MONSTERS.find(
       (t) => t.name.toLowerCase() === baseName.toLowerCase(),
     );
-    if (!template) continue;
 
-    if (template.individual && template.individual !== 'none') {
-      const r = rollIndividual(template.individual);
+    const individualExpr = template?.individual ?? m.individualTreasure;
+    if (individualExpr && individualExpr !== 'none') {
+      const r = rollIndividual(individualExpr);
       Object.assign(coins, add(coins, r.coins));
       gems.push(...r.gems);
       jewelry.push(...r.jewelry);
       magicItems.push(...r.magic);
     }
 
-    if (template.lairType && template.lairType !== 'none') {
-      lairTypeSet.add(template.lairType.toUpperCase());
+    const lairType = template?.lairType ?? m.lairTreasure;
+    if (lairType && lairType !== 'none') {
+      lairTypeSet.add(lairType.toUpperCase());
     }
   }
 
@@ -488,7 +489,8 @@ export function generateLoot(
   let monsterXPTotal = 0;
   for (const [name, count] of counts) {
     const template = MONSTERS.find((t) => t.name.toLowerCase() === name.toLowerCase());
-    const xpEach = template ? monsterXP(template) : 0;
+    const sample = defeated.find((m) => stripNumber(m.name).toLowerCase() === name.toLowerCase());
+    const xpEach = sample?.manualXP !== undefined ? sample.manualXP : (template ? monsterXP(template) : 0);
     const subtotal = xpEach * count;
     monsterXPTotal += subtotal;
     if (xpEach > 0) xpBreakdown.push({ name, count, xpEach, subtotal });

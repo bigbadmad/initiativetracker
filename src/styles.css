@@ -1275,6 +1275,13 @@ details[open] .encounter-generator-summary::before { transform: rotate(90deg); }
 /* Browse library trigger button (inside add-monster card) */
 .btn-library { width: 100%; margin-bottom: 10px; }
 
+/* Loot & XP row inside add/edit forms */
+.form-input-ind-treasure { flex: 1 1 0; min-width: 0; }
+.form-select-lair { flex-shrink: 0; width: 90px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 6px 4px; font-size: 0.85rem; }
+.form-input-xp { flex-shrink: 0; width: 90px; }
+.edit-loot-section { margin-bottom: 10px; }
+.library-loot-info { font-size: 0.82rem; color: var(--amber-dim); margin: 0 0 8px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px; }
+
 /* ══════════════════════════════════════════════════════════════════════════════
    LOOT SCREEN
 ══════════════════════════════════════════════════════════════════════════════ */

@@ -4,6 +4,7 @@ import { openMonsterLibrary } from './library.ts';
 import type { MonsterTemplate } from '../data/monsters.ts';
 import { rollHD } from '../data/monsters.ts';
 import { ENCOUNTER_TABLES, generateEncounter, rollEncounterHp } from '../data/encounters.ts';
+import { monsterXP } from '../data/loot.ts';
 import type { GeneratedEncounter } from '../data/encounters.ts';
 import {
   addCombatant,
@@ -535,6 +536,44 @@ function buildEditPanel(c: Combatant): HTMLElement {
 
   panel.appendChild(fieldsRow);
 
+  // Loot & XP fields (monsters only)
+  if (c.type !== 'player') {
+    const lootSection = el('div', { cls: 'edit-loot-section' });
+    lootSection.appendChild(el('p', { cls: 'form-label', text: 'Loot & XP (optional):' }));
+    const lootRow = el('div', { cls: 'form-row-inline' });
+
+    const indInput = el('input', {
+      attrs: { type: 'text', placeholder: 'Ind. treasure (e.g. Q×3)', value: c.individualTreasure ?? '' },
+      cls: 'form-input-ind-treasure',
+    }) as HTMLInputElement;
+    indInput.addEventListener('change', () => {
+      const v = indInput.value.trim();
+      updateCombatant(c.id, { individualTreasure: v || undefined });
+    });
+
+    const lairSel = el('select', { cls: 'form-select-lair' }) as HTMLSelectElement;
+    ['', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'].forEach((v) => {
+      lairSel.appendChild(el('option', { text: v === '' ? 'Lair type' : `Lair ${v}`, attrs: { value: v } }));
+    });
+    lairSel.value = c.lairTreasure ?? '';
+    lairSel.addEventListener('change', () => {
+      updateCombatant(c.id, { lairTreasure: lairSel.value || undefined });
+    });
+
+    const xpInput = el('input', {
+      attrs: { type: 'number', placeholder: 'XP per kill', min: '0', value: c.manualXP !== undefined ? String(c.manualXP) : '' },
+      cls: 'form-input-xp',
+    }) as HTMLInputElement;
+    xpInput.addEventListener('change', () => {
+      const v = parseInt(xpInput.value, 10);
+      updateCombatant(c.id, { manualXP: isNaN(v) ? undefined : v });
+    });
+
+    lootRow.append(indInput, lairSel, xpInput);
+    lootSection.appendChild(lootRow);
+    panel.appendChild(lootSection);
+  }
+
   // Modifiers
   const modSection = el('div', { cls: 'edit-mod-section' });
   modSection.appendChild(el('p', { cls: 'form-label', text: 'Modifiers:' }));
@@ -614,23 +653,19 @@ function buildAddForm(type: CombatantType, onAdd: () => void): HTMLElement {
   nameWrap.appendChild(nameInput);
   card.appendChild(nameWrap);
 
-  // HP + Quantity inputs (monsters only)
+  // HP + Quantity + loot inputs (monsters only) — all declared up front so the
+  // library callback closure can reference lootLabel / lootRow / lootInfoEl.
   let hpInput: HTMLInputElement | null = null;
-  // Browse Library button — monsters only, placed after the name input
-  if (isMonster) {
-    card.appendChild(
-      iconBtn('fa-solid fa-book-open', 'Browse Monster Library', 'btn btn-secondary btn-library', () => {
-        openMonsterLibrary((template) => {
-          lastLibraryTemplate = template;
-          (nameInput as HTMLInputElement).value = template.name;
-          // Roll HP from actual dice rather than using the average
-          if (hpInput) hpInput.value = String(rollHD(template.hd));
-        });
-      }),
-    );
-  }
   let qtyInput: HTMLInputElement | null = null;
+  let individualTreasureInput: HTMLInputElement | null = null;
+  let lairTreasureSelect: HTMLSelectElement | null = null;
+  let manualXpInput: HTMLInputElement | null = null;
+  let lootLabel: HTMLElement | null = null;
+  let lootRow: HTMLElement | null = null;
+  let lootInfoEl: HTMLElement | null = null;
+
   if (isMonster) {
+    // HP / Qty row
     const hpRow = el('div', { cls: 'form-row-inline' });
     hpInput = el('input', {
       attrs: { type: 'number', placeholder: 'Max HP', min: '1', id: `hp-${type}` },
@@ -640,7 +675,55 @@ function buildAddForm(type: CombatantType, onAdd: () => void): HTMLElement {
     }) as HTMLInputElement;
     const qtyLabel = el('label', { text: '×', attrs: { for: `qty-${type}`, title: 'Quantity' }, cls: 'qty-label' });
     hpRow.append(hpInput, qtyLabel, qtyInput);
+
+    // Manual loot/XP inputs (visible when no library template is selected)
+    lootLabel = el('p', { cls: 'form-label', text: 'Loot & XP (optional):' });
+    lootRow = el('div', { cls: 'form-row-inline' });
+    individualTreasureInput = el('input', {
+      attrs: { type: 'text', placeholder: 'Ind. treasure (e.g. Q×3)', id: `ind-${type}` },
+      cls: 'form-input-ind-treasure',
+    }) as HTMLInputElement;
+    lairTreasureSelect = el('select', { cls: 'form-select-lair' }) as HTMLSelectElement;
+    ['', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'].forEach((v) => {
+      lairTreasureSelect!.appendChild(
+        el('option', { text: v === '' ? 'Lair type' : `Lair ${v}`, attrs: { value: v } }),
+      );
+    });
+    manualXpInput = el('input', {
+      attrs: { type: 'number', placeholder: 'XP per kill', min: '0', id: `xp-${type}` },
+      cls: 'form-input-xp',
+    }) as HTMLInputElement;
+    lootRow.append(individualTreasureInput, lairTreasureSelect, manualXpInput);
+
+    // Library loot summary (hidden until a library template is selected)
+    lootInfoEl = el('p', { cls: 'library-loot-info' });
+    lootInfoEl.style.display = 'none';
+
+    // Browse Library button — placed right after the name input
+    card.appendChild(
+      iconBtn('fa-solid fa-book-open', 'Browse Monster Library', 'btn btn-secondary btn-library', () => {
+        openMonsterLibrary((template) => {
+          lastLibraryTemplate = template;
+          (nameInput as HTMLInputElement).value = template.name;
+          if (hpInput) hpInput.value = String(rollHD(template.hd));
+
+          // Swap to read-only library summary
+          lootLabel!.style.display = 'none';
+          lootRow!.style.display = 'none';
+          const parts: string[] = [];
+          if (template.individual && template.individual !== 'none') parts.push(`Ind: ${template.individual}`);
+          if (template.lairType && template.lairType !== 'none') parts.push(`Lair: ${template.lairType}`);
+          parts.push(`XP: ${monsterXP(template).toLocaleString()} per kill`);
+          lootInfoEl!.textContent = parts.join(' · ');
+          lootInfoEl!.style.display = '';
+        });
+      }),
+    );
+
     card.appendChild(hpRow);
+    card.appendChild(lootLabel);
+    card.appendChild(lootRow);
+    card.appendChild(lootInfoEl);
   }
 
   // Modifiers builder
@@ -724,6 +807,17 @@ function buildAddForm(type: CombatantType, onAdd: () => void): HTMLElement {
     // Base HP from the form field (used for qty=1 or manual entry)
     const formHp = isMonster && hpInput ? parseInt(hpInput.value, 10) || null : null;
 
+    // When a library template is active, source loot/XP from it; otherwise use the form inputs.
+    const individualTreasure = libTemplate
+      ? (libTemplate.individual && libTemplate.individual !== 'none' ? libTemplate.individual : undefined)
+      : (individualTreasureInput?.value.trim() || undefined);
+    const lairTreasure = libTemplate
+      ? (libTemplate.lairType && libTemplate.lairType !== 'none' ? libTemplate.lairType : undefined)
+      : (lairTreasureSelect?.value || undefined);
+    const manualXP = libTemplate
+      ? monsterXP(libTemplate)
+      : (manualXpInput?.value ? (parseInt(manualXpInput.value, 10) || undefined) : undefined);
+
     for (let i = 0; i < qty; i++) {
       // When adding multiple from library, roll HP independently for each
       const maxHp = libTemplate && qty > 1
@@ -764,6 +858,9 @@ function buildAddForm(type: CombatantType, onAdd: () => void): HTMLElement {
           damage: libTemplate.damage,
           thac0: libTemplate.thac0,
         } : {}),
+        ...(individualTreasure !== undefined ? { individualTreasure } : {}),
+        ...(lairTreasure !== undefined ? { lairTreasure } : {}),
+        ...(manualXP !== undefined ? { manualXP } : {}),
       };
       addCombatant(combatant);
     }
@@ -773,6 +870,13 @@ function buildAddForm(type: CombatantType, onAdd: () => void): HTMLElement {
     (nameInput as HTMLInputElement).value = '';
     if (hpInput) hpInput.value = '';
     if (qtyInput) qtyInput.value = '1';
+    if (individualTreasureInput) individualTreasureInput.value = '';
+    if (lairTreasureSelect) lairTreasureSelect.value = '';
+    if (manualXpInput) manualXpInput.value = '';
+    // Restore manual loot inputs, hide library summary
+    if (lootLabel) lootLabel.style.display = '';
+    if (lootRow) lootRow.style.display = '';
+    if (lootInfoEl) { lootInfoEl.style.display = 'none'; lootInfoEl.textContent = ''; }
     mods.length = 0;
     refreshModList();
     onAdd();
