@@ -219,14 +219,6 @@ export function startNewRound(): void {
   notify();
 }
 
-/**
- * Trigger a re-render without changing state.
- * Use only for local UI state changes (e.g. opening/closing the engagement picker)
- * that need the DOM to rebuild but don't modify any app data.
- */
-export function forceRender(): void {
-  onStateChange?.();
-}
 
 /** Clear loot screen and return to setup with players pre-loaded. */
 export function continueLoot(): void {

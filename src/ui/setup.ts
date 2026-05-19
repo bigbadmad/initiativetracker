@@ -51,7 +51,7 @@ export function renderSetup(): HTMLElement {
 
   // Header
   const header = el('header', { cls: 'screen-header' });
-  header.appendChild(el('h1', { text: 'AD&D 2e Initiative Tracker' }));
+  header.appendChild(el('h1', { text: 'AD&D 2e Encounter Tracker' }));
   header.appendChild(el('p', { cls: 'subtitle', text: 'Encounter Setup' }));
   root.appendChild(header);
 

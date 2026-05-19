@@ -2,49 +2,73 @@
 
 ## What This Is
 
-A segment-based initiative tracker for AD&D 2nd Edition. Implements the AD&D 2e initiative system where combatants roll d10 and add modifiers; lower total = acts first; combat resolves segment-by-segment (1–10). Designed for DM use at the table.
+A full-encounter management tool for AD&D 2nd Edition. Covers setup → initiative → combat → loot → back to setup. Designed for DM use at the table.
 
 ## Tech Stack
 
-- **Language**: TypeScript (strict mode)
+- **Language**: TypeScript (strict mode — `noUnusedLocals`, `noUnusedParameters`)
 - **Build**: Vite 6 + `tsc`
-- **Styling**: Vanilla CSS with CSS custom properties (dark D&D parchment theme)
+- **Styling**: Vanilla CSS + Font Awesome 6 (CDN in `index.html`)
+- **Icons**: `faIcon(cls)` and `iconBtn(iconCls, label, cls, onClick, ariaLabel?)` helpers in `ui/components.ts`
 - **Framework**: None — pure DOM manipulation
-- **Dev server**: `npm run dev` | Build: `npm run build` | Preview: `npm run preview`
+- **Dev server**: `npm run dev` | Build: `npm run build` | Tests: `npm test`
 
 ## Architecture
 
 ```
 src/
-├── main.ts          # App entry point; routes by phase; registers re-render callback
-├── types.ts         # All TypeScript interfaces (Combatant, AppState, Modifier, etc.)
-├── state.ts         # Singleton state manager + observer pattern
-├── combat.ts        # Pure AD&D 2e rules logic (no DOM, no state)
-├── styles.css       # All styles — single file, sectioned by screen
+├── main.ts              # App router (switches on AppState.phase)
+├── types.ts             # All TypeScript interfaces
+├── state.ts             # Singleton state + localStorage persistence
+├── combat.ts            # Pure game logic (no DOM, no state)
+├── styles.css           # All styles — single file, sectioned by screen
+├── data/
+│   ├── monsters.ts      # MonsterTemplate[] + rollHD(hd) + ALL_TAGS
+│   ├── encounters.ts    # TerrainTable[] + generateEncounter() + rollCount()
+│   ├── loot.ts          # rollLairLoot() + generateLoot() + treasure type tables
+│   └── magicItems.ts    # rollMagicItem() + all DMG magic item sub-tables
 └── ui/
-    ├── components.ts  # DOM factory helpers (el, btn, labeledInput, chip, etc.)
-    ├── setup.ts       # Phase: "setup" — add combatants, assign modifiers/HP
-    ├── initiative.ts  # Phase: "initiative" — enter d10 rolls, declare actions
-    └── tracker.ts     # Phase: "combat" — segment-by-segment tracking, HP management
+    ├── components.ts    # el(), btn(), iconBtn(), faIcon(), chip(), uid()…
+    ├── library.ts       # openMonsterLibrary(onSelect) — modal, appends to body
+    ├── setup.ts         # renderSetup() — phase: 'setup'
+    ├── initiative.ts    # renderInitiative() — phase: 'initiative'
+    ├── tracker.ts       # renderTracker() — phase: 'combat'
+    └── loot.ts          # renderLoot() — phase: 'loot'
 ```
 
-**Data flow**: State mutation → `setState()` → registered callback fires → full re-render of current screen. No virtual DOM; screens are rebuilt from scratch on each state change.
+**Data flow**: mutation → `setState()/updateCombatant()/…` → `notify()` → `persistState()` + registered render callback → full screen re-render.
 
-## State Management
+## App Phases
 
-All app state lives in the singleton in `state.ts`. Mutation functions:
+```
+'setup' → 'initiative' → 'combat' → 'loot' → 'setup' (players preserved)
+                ↓               ↓
+          (surprised?)     (end round) → 'initiative'
+          surprise phase
+          (round 0, 1 seg)
+```
+
+`applyDamage` transitions to `'loot'` (not `'setup'`) when all monsters fall. `continueLoot()` completes the loot → setup transition.
+
+## State Management (`state.ts`)
+
+All app state in one singleton. Key exports:
 
 | Function | Effect |
 |---|---|
 | `setState(patch)` | Batch update + re-render |
-| `addCombatant(c)` | Append to combatants array |
 | `updateCombatant(id, patch)` | Patch + re-render |
-| `updateCombatantSilent(id, patch)` | Patch without re-render (used for text inputs to avoid focus loss) |
-| `applyDamage(id, amount)` | Reduce HP; auto-deactivate at 0; triggers return-to-setup when all monsters defeated |
-| `applyHealing(id, amount)` | Heal up to maxHp |
-| `beginInitiativePhase()` | Auto-roll monsters, detect surprise, transition to "initiative" |
-| `startNewRound()` | Clear rolls, bump roundNumber, auto-roll monsters |
-| `resetEncounter()` | Full reset to blank slate |
+| `updateCombatantSilent(id, patch)` | Patch + persist, no re-render (for text inputs) |
+| `applyDamage(id, amount)` | Reduce HP; deactivate at 0; clear targetId; → loot phase when all monsters die |
+| `applyHealing(id, amount)` | Heal up to maxHp, reactivate |
+| `beginInitiativePhase()` | Auto-roll monsters; detect surprise → roundNumber=0 |
+| `startNewRound()` | Preserve `prevInitiative`; clear rolls; bump round; auto-roll monsters |
+| `continueLoot()` | Clear loot; reset players; → setup |
+| `resetEncounter()` | Full blank-slate reset |
+| `importState(s)` | Replace entire state (JSON import) |
+| `generateLoot(…)` | Called internally by applyDamage; uses `data/loot.ts` |
+
+localStorage key: `'adnd-tracker'`. Migration in `loadPersistedState` adds missing fields with defaults when loading old saves.
 
 ## AD&D 2e Initiative Formula
 
@@ -54,43 +78,61 @@ if hasHaste:  base = max(1, floor(base / 2))
 if hasSlow:   base += 10
 ```
 
-Lower total acts first. Ties = simultaneous action. Surprised combatants get sentinel value 99 (excluded from normal segments). Surprise phase = Round 0, 1 segment only.
+Lower total acts first. Ties = simultaneous. Surprised combatants get sentinel 99 (excluded from all segments). HdC combatants also get sentinel 99 and are excluded.
 
-## Modifier Kinds
+## Combatant Fields (key ones)
 
-| Kind | Behaviour | Notes |
+| Field | Type | Notes |
 |---|---|---|
-| `weapon_speed` | Adds to initiative | From weapon speed factor |
-| `spell_casting` | Adds to initiative | Casting time in segments |
-| `dex_reaction` | Adds to initiative | Usually negative (bonus) |
-| `haste` | Halves total (min 1), then other mods applied | Non-linear |
-| `slow` | Adds 10 to final total | Non-linear |
-| `other` | Numeric, adds linearly | Catch-all |
+| `modifiers` | `Modifier[]` | Standing initiative modifiers |
+| `d10Roll` | `number \| null` | Raw die result this round |
+| `totalInitiative` | `number \| null` | Computed (99 = sentinel for surprised/HdC) |
+| `prevInitiative` | `number \| null` | Last round's total, shown for context |
+| `isSurprised` | `boolean` | Cleared by `startNewRound` |
+| `isHorsDeCombat` | `boolean` | Persists across rounds; DM clears manually |
+| `atRange` | `boolean` | Display only; persists across rounds |
+| `targetId` | `string \| null` | Monster's assigned target PC; cleared on defeat |
+| `ac`, `attacks`, `damage`, `thac0` | optional | Populated from monster library for display in tracker |
 
-`haste` and `slow` are valueless (boolean flags); others have a numeric value.
+## Data Layer (`src/data/`)
 
-## App Phases
+### `monsters.ts`
+- `MonsterTemplate` interface includes `individual?` (treasure type expression e.g. `"Q×3"`) and `lairType?` (letter e.g. `"D"`)
+- `rollHD(hd: string): number` — parses 2e HD notation: `"2"`, `"3+1"`, `"1-1"`, `"1/2"`, `"11+"`, `"45 hp"`, `"45-75 hp"`
+- `MONSTERS: MonsterTemplate[]` — 100+ monsters; names must match encounter table `monster` strings exactly for loot/stat auto-fill
 
-```
-setup → initiative → combat → (all monsters dead) → setup (players preserved)
-                  ↓               ↓
-           (surprised?)     (end round) → initiative
-           surprise phase
-           (round 0, 1 seg)
-```
+### `encounters.ts`
+- `ENCOUNTER_TABLES: TerrainTable[]` — 14 terrain types from DMG Chapter 11
+- `generateEncounter(terrainId): GeneratedEncounter | null` — weighted random pick; rolls count; looks up template in MONSTERS
+- `rollEncounterHp(enc): number` — rolls HP from the matched or fallback HD
 
-## Key Files to Know
+### `loot.ts`
+- Individual types P–V: rolled per monster body; expression parser handles `"Q"`, `"Q×3"`, `"P,Q×2"` etc.
+- Lair types A–I: `rollLairLoot(type): LootResult` — rolls all coin/gem/jewelry/magic for that type
+- `generateLoot(defeated[]): LootResult` — aggregates individual treasure; collects unique lair types; called by `applyDamage`
+- `LootResult.magicItems: string[]` — specific item names from `magicItems.ts`
 
-- **Adding a new modifier kind**: `types.ts` (`ModifierKind`), `combat.ts` (`calcInitiative`), `ui/setup.ts` (`MOD_KIND_LABELS`, `VALUELESS_KINDS`), `ui/initiative.ts` (background mod display)
-- **Initiative formula change**: `combat.ts:calcInitiative`
-- **HP logic**: `state.ts:applyDamage` / `applyHealing`; display colours in `styles.css` (`.hp-healthy`, `.hp-bloodied`, `.hp-critical`)
-- **Segment navigation**: `combat.ts:nextActiveSegment`, `combat.ts:firstActiveSegment`
-- **Surprise handling**: `state.ts:beginInitiativePhase`, `ui/tracker.ts:renderTracker`
+### `magicItems.ts`
+- `rollMagicItem(): string` — main table (10 categories, weighted); calls sub-table function
+- Sub-tables: `potion()`, `scroll()`, `ring()`, `rod()`, `staff()`, `wand()`, `armor()`, `sword()`, `miscWeapon()`, `miscMagic()`
+- Items ending in `(C)` are cursed; rendered in red on loot screen
+
+## UI Conventions
+
+- DOM creation through `components.ts` helpers — don't use `document.createElement` directly in screen files
+- All icon buttons use `iconBtn(faClass, label, cls, handler, ariaLabel?)` — plain `btn()` is for text-only buttons
+- Screen render functions return an `HTMLElement`; `main.ts` mounts them
+- `updateCombatantSilent` for any input that fires on every keystroke (avoids re-renders killing focus)
+- The `change` event on roll inputs in initiative.ts uses `updateCombatantSilent` intentionally — prevents the button-click double-tap bug where `change` + re-render destroys the Lock In button before `click` fires
+
+## Adding a New Modifier Kind
+Touch: `types.ts` (`ModifierKind`), `combat.ts` (`calcInitiative`), `ui/setup.ts` (`MOD_KIND_LABELS`, `VALUELESS_KINDS`), `ui/initiative.ts` (background mod display)
+
+## Adding a New Monster
+Add to `MONSTERS[]` in `monsters.ts`. Include `individual` and `lairType` for loot generation. If the monster appears in an encounter table entry, the `monster` string in the entry must match `name` exactly (after stripping trailing numbers).
 
 ## Coding Conventions
-
-- DOM creation goes through `ui/components.ts` helpers — don't use `document.createElement` directly in screen files
-- Screen render functions (`renderSetup`, `renderInitiative`, `renderTracker`) are called by `main.ts`; they return a DOM node
-- Pure game logic stays in `combat.ts`; state mutations stay in `state.ts`; DOM stays in `ui/`
-- TypeScript strict mode is on — no implicit any, unused locals/params are errors
-- No external UI libraries; keep it dependency-free
+- TypeScript strict mode — no implicit any, unused locals/params are errors
+- No external UI libraries
+- No comments unless the WHY is non-obvious
+- Pure game logic in `combat.ts`/`data/`; state in `state.ts`; DOM in `ui/`
