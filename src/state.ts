@@ -1,5 +1,6 @@
 import type { AppState, Combatant } from './types.ts';
 import { calcInitiative, rollD10 } from './combat.ts';
+import { generateLoot } from './data/loot.ts';
 
 // -- Initial state -------------------------------------------------------------
 
@@ -9,6 +10,7 @@ const initialState: AppState = {
   roundNumber: 1,
   currentSegment: 1,
   inSurprisePhase: false,
+  pendingLoot: null,
 };
 
 // -- localStorage persistence --------------------------------------------------
@@ -35,7 +37,7 @@ function loadPersistedState(): AppState {
       atRange: (c.atRange as boolean | undefined) ?? false,
       targetId: (c.targetId as string | null | undefined) ?? null,
     }));
-    return { ...structuredClone(initialState), ...parsed, combatants };
+    return { ...structuredClone(initialState), ...parsed, combatants, pendingLoot: parsed.pendingLoot ?? null };
   } catch {
     return structuredClone(initialState);
   }
@@ -133,11 +135,9 @@ export function applyDamage(id: string, amount: number): void {
   // Check if all HP-tracked monsters/NPCs are now defeated
   const monstersWithHp = newCombatants.filter((c) => c.type !== 'player' && c.maxHp !== null);
   if (monstersWithHp.length > 0 && monstersWithHp.every((c) => !c.isActive)) {
-    // Return to setup keeping only players, reset their round state
-    const players = newCombatants
-      .filter((c) => c.type === 'player')
-      .map((c) => ({ ...c, d10Roll: null, totalInitiative: null, prevInitiative: null, isSurprised: false, isHorsDeCombat: false, atRange: false, targetId: null, isActive: true, action: '' }));
-    state = { ...initialState, combatants: players };
+    // All monsters defeated — generate loot and show the loot screen
+    const loot = generateLoot(monstersWithHp);
+    state = { ...state, combatants: newCombatants, phase: 'loot', pendingLoot: loot };
   } else {
     state = { ...state, combatants: newCombatants };
   }
@@ -226,6 +226,15 @@ export function startNewRound(): void {
  */
 export function forceRender(): void {
   onStateChange?.();
+}
+
+/** Clear loot screen and return to setup with players pre-loaded. */
+export function continueLoot(): void {
+  const players = state.combatants
+    .filter((c) => c.type === 'player')
+    .map((c) => ({ ...c, d10Roll: null, totalInitiative: null, prevInitiative: null, isSurprised: false, isHorsDeCombat: false, atRange: false, targetId: null, isActive: true, action: '' }));
+  state = { ...initialState, combatants: players };
+  notify();
 }
 
 /** Full reset - back to setup with a blank slate. */

@@ -10,6 +10,7 @@ import {
   beginInitiativePhase,
   startNewRound,
   resetEncounter,
+  continueLoot,
   setState,
   reorderCombatants,
 } from './state.ts';
@@ -168,29 +169,30 @@ describe('applyDamage', () => {
     expect(findById(p.id)?.currentHp).toBeNull();
   });
 
-  it('returns to setup keeping only players when all HP-tracked monsters are defeated', () => {
+  it('transitions to loot phase (not setup) when all HP-tracked monsters are defeated', () => {
     const player = makePlayer({ name: 'Tordek' });
     const monster = makeMonster({ currentHp: 5 });
     addCombatant(player);
     addCombatant(monster);
     applyDamage(monster.id, 5);
+    expect(getState().phase).toBe('loot');
+    expect(getState().pendingLoot).not.toBeNull();
+  });
+
+  it('continueLoot returns to setup with only players and clears their round data', () => {
+    const player = makePlayer({ name: 'Tordek', d10Roll: 7, totalInitiative: 9, isSurprised: true });
+    const monster = makeMonster({ currentHp: 1 });
+    addCombatant(player);
+    addCombatant(monster);
+    applyDamage(monster.id, 1); // → loot phase
+    continueLoot();             // → setup phase
     const s = getState();
     expect(s.phase).toBe('setup');
     expect(s.combatants).toHaveLength(1);
     expect(s.combatants[0].name).toBe('Tordek');
-  });
-
-  it('resets roll and surprise data on players when returning to setup', () => {
-    const player = makePlayer({ d10Roll: 7, totalInitiative: 9, isSurprised: true });
-    const monster = makeMonster({ currentHp: 1 });
-    addCombatant(player);
-    addCombatant(monster);
-    applyDamage(monster.id, 1);
-    const p = getState().combatants[0];
-    expect(p.d10Roll).toBeNull();
-    expect(p.totalInitiative).toBeNull();
-    expect(p.isSurprised).toBe(false);
-    expect(p.isActive).toBe(true);
+    expect(s.combatants[0].d10Roll).toBeNull();
+    expect(s.combatants[0].isSurprised).toBe(false);
+    expect(s.pendingLoot).toBeNull();
   });
 
   it('does not return to setup while at least one monster is still alive', () => {

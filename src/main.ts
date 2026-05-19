@@ -3,6 +3,7 @@ import { registerRenderer, getState, setState, startNewRound } from './state.ts'
 import { renderSetup } from './ui/setup.ts';
 import { renderInitiative } from './ui/initiative.ts';
 import { renderTracker } from './ui/tracker.ts';
+import { renderLoot } from './ui/loot.ts';
 import { mount } from './ui/components.ts';
 import { maxInitiativeSegment, nextActiveSegment } from './combat.ts';
 
@@ -21,6 +22,9 @@ function renderApp(): void {
       break;
     case 'combat':
       screen = renderTracker();
+      break;
+    case 'loot':
+      screen = renderLoot();
       break;
   }
 

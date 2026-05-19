@@ -1192,6 +1192,141 @@ details[open] .encounter-generator-summary::before { transform: rotate(90deg); }
 /* Browse library trigger button (inside add-monster card) */
 .btn-library { width: 100%; margin-bottom: 10px; }
 
+/* ══════════════════════════════════════════════════════════════════════════════
+   LOOT SCREEN
+══════════════════════════════════════════════════════════════════════════════ */
+.loot-screen { display: flex; flex-direction: column; gap: 20px; }
+
+/* Victory header */
+.loot-header {
+  text-align: center;
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 14px;
+}
+.loot-title {
+  font-size: 2rem;
+  color: var(--amber-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.loot-subtitle {
+  color: var(--text-muted);
+  font-style: italic;
+  margin: 4px 0 0;
+}
+
+/* Body layout */
+.loot-body { display: flex; flex-direction: column; gap: 20px; }
+
+/* Sections */
+.loot-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.loot-section-title {
+  margin: 0 0 2px;
+  color: var(--amber);
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.loot-section-hint {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin: 0;
+}
+.loot-empty {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin: 0;
+}
+
+/* Individual treasure rows */
+.loot-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.loot-row:last-of-type { border-bottom: none; }
+.loot-row-icon { color: var(--amber-dim); width: 20px; text-align: center; flex-shrink: 0; }
+.loot-row-label { color: var(--text-muted); font-size: 0.88rem; flex-shrink: 0; min-width: 90px; }
+.loot-row-value { color: var(--text-bright); font-weight: bold; }
+
+/* Gem / jewelry lists */
+.loot-list-wrap { display: flex; flex-direction: column; gap: 4px; }
+.loot-item-list {
+  list-style: none;
+  padding: 0 0 0 30px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.loot-item-list li {
+  font-size: 0.85rem;
+  color: var(--text);
+  padding: 2px 0;
+}
+.loot-item-list li::before {
+  content: '◆ ';
+  color: var(--amber-dim);
+  font-size: 0.65rem;
+}
+
+/* Magic items row */
+.loot-magic-row { border-bottom: none; }
+.loot-magic-value { color: #c07ee0; }
+.loot-magic-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin: 0 0 0 30px;
+}
+
+/* Lair section */
+.loot-lair-section { border-top: 2px solid var(--amber-dim); }
+.lair-type-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  background: var(--bg-card-alt);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+.lair-type-badge {
+  display: inline-block;
+  padding: 2px 12px;
+  background: #3a2c10;
+  border: 1px solid var(--amber-dim);
+  border-radius: 99px;
+  font-size: 0.85rem;
+  color: var(--amber-light);
+  font-weight: bold;
+  letter-spacing: 0.05em;
+}
+.lair-result { display: flex; flex-direction: column; gap: 8px; }
+
+/* Footer */
+.loot-footer {
+  display: flex;
+  justify-content: center;
+  padding-top: 8px;
+}
+.btn-loot-continue { padding: 12px 32px; font-size: 1.05rem; }
+
 /* -- Scrollbar --------------------------------------------------------------- */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg); }

@@ -67,7 +67,27 @@ export interface Combatant {
 
 // -- Application phases -------------------------------------------------------
 
-export type AppPhase = 'setup' | 'initiative' | 'combat';
+export type AppPhase = 'setup' | 'initiative' | 'combat' | 'loot';
+
+// -- Loot result ---------------------------------------------------------------
+
+export interface LootResult {
+  /** Human-readable summary of which monsters were defeated. */
+  encounterSummary: string;
+  cp: number;
+  sp: number;
+  ep: number;
+  gp: number;
+  pp: number;
+  /** Gem descriptions with gp value, e.g. "Amber (100 gp)". */
+  gems: string[];
+  /** Jewelry / art object descriptions. */
+  jewelry: string[];
+  /** Number of magic items to determine (DM consults DMG tables). */
+  magicItems: number;
+  /** Lair treasure type letter(s) for each monster type encountered, e.g. ["C","D"]. */
+  lairTypes: string[];
+}
 
 // -- Top-level app state ------------------------------------------------------
 
@@ -78,4 +98,6 @@ export interface AppState {
   currentSegment: number;
   /** Whether we are currently resolving the surprise phase. */
   inSurprisePhase: boolean;
+  /** Populated when transitioning to the 'loot' phase; null otherwise. */
+  pendingLoot: LootResult | null;
 }

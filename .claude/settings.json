@@ -8,7 +8,8 @@
       "Bash(npm test *)",
       "Bash(node_modules\\\\.bin\\\\vitest run *)",
       "Bash(npx tsc *)",
-      "Bash(echo \"EXIT:$?\")"
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(node -e ' *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\mad\\.claude\\projects\\c--Users-mad-Documents-GitHub-initiativetracker\\memory"
