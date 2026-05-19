@@ -1285,14 +1285,13 @@ details[open] .encounter-generator-summary::before { transform: rotate(90deg); }
   font-size: 0.65rem;
 }
 
-/* Magic items row */
-.loot-magic-row { border-bottom: none; }
-.loot-magic-value { color: #c07ee0; }
+/* Magic items list */
+.loot-magic-list .loot-item-cursed { color: var(--red-light); }
 .loot-magic-hint {
   font-size: 0.78rem;
   color: var(--text-muted);
   font-style: italic;
-  margin: 0 0 0 30px;
+  margin: 4px 0 0 30px;
 }
 
 /* Lair section */

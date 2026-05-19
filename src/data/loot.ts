@@ -5,6 +5,7 @@
 
 import type { LootResult } from '../types.ts';
 import { MONSTERS } from './monsters.ts';
+import { rollMagicItem } from './magicItems.ts';
 
 // -- Dice helpers -------------------------------------------------------------
 
@@ -94,8 +95,8 @@ function add(a: Coins, b: Partial<Coins>): Coins {
 
 // -- Individual treasure types (P–V, DMG p.138) --------------------------------
 
-function rollIndividualCode(code: string): { coins: Partial<Coins>; gems: string[]; jewelry: string[]; magic: number } {
-  const result = { coins: {} as Partial<Coins>, gems: [] as string[], jewelry: [] as string[], magic: 0 };
+function rollIndividualCode(code: string): { coins: Partial<Coins>; gems: string[]; jewelry: string[]; magic: string[] } {
+  const result = { coins: {} as Partial<Coins>, gems: [] as string[], jewelry: [] as string[], magic: [] as string[] };
   switch (code.toUpperCase()) {
     case 'P': result.coins = { cp: roll(3, 8) }; break;
     case 'Q': result.coins = { sp: roll(1, 4) }; break;
@@ -106,12 +107,14 @@ function rollIndividualCode(code: string): { coins: Partial<Coins>; gems: string
       if (pct(10)) result.coins.sp = (result.coins.sp ?? 0) + roll(1, 100);
       if (pct(10)) result.coins.gp = (result.coins.gp ?? 0) + roll(1, 100);
       if (pct(5)) for (let i = 0; i < roll(1, 4); i++) result.gems.push(randomGem());
+      if (pct(5)) result.magic.push(rollMagicItem());
       break;
     case 'V':
       if (pct(10)) result.coins.gp = (result.coins.gp ?? 0) + roll(1, 100);
       if (pct(5)) result.coins.pp = (result.coins.pp ?? 0) + roll(1, 100);
       if (pct(10)) for (let i = 0; i < roll(1, 4); i++) result.gems.push(randomGem());
       if (pct(5)) for (let i = 0; i < roll(1, 4); i++) result.jewelry.push(randomJewelry());
+      if (pct(10)) result.magic.push(rollMagicItem());
       break;
   }
   return result;
@@ -121,8 +124,8 @@ function rollIndividualCode(code: string): { coins: Partial<Coins>; gems: string
  * Parse and roll an individual treasure expression such as "Q", "Q×3", "P,Q×2".
  * Returns aggregated coins, gems, jewelry, magic items.
  */
-function rollIndividual(expr: string): { coins: Coins; gems: string[]; jewelry: string[]; magic: number } {
-  const out = { coins: zeros(), gems: [] as string[], jewelry: [] as string[], magic: 0 };
+function rollIndividual(expr: string): { coins: Coins; gems: string[]; jewelry: string[]; magic: string[] } {
+  const out = { coins: zeros(), gems: [] as string[], jewelry: [] as string[], magic: [] as string[] };
   if (!expr || expr.toLowerCase() === 'none') return out;
 
   for (const part of expr.split(',').map((s) => s.trim())) {
@@ -135,7 +138,7 @@ function rollIndividual(expr: string): { coins: Coins; gems: string[]; jewelry: 
       out.coins = add(out.coins, r.coins);
       out.gems.push(...r.gems);
       out.jewelry.push(...r.jewelry);
-      out.magic += r.magic;
+      out.magic.push(...r.magic);
     }
   }
   return out;
@@ -143,11 +146,15 @@ function rollIndividual(expr: string): { coins: Coins; gems: string[]; jewelry: 
 
 // -- Lair treasure types (A–I, DMG p.137) -------------------------------------
 
+function rollItems(count: number): string[] {
+  return Array.from({ length: count }, rollMagicItem);
+}
+
 export function rollLairLoot(type: string): LootResult {
   let cp = 0, sp = 0, ep = 0, gp = 0, pp = 0;
   const gems: string[] = [];
   const jewelry: string[] = [];
-  let magicItems = 0;
+  let magicItems: string[] = [];
 
   switch (type.toUpperCase()) {
     case 'A':
@@ -158,7 +165,7 @@ export function rollLairLoot(type: string): LootResult {
       if (pct(25)) pp = roll(1, 6) * 1000;
       if (pct(50)) for (let i = 0; i < roll(1, 6); i++) gems.push(randomGem());
       if (pct(50)) for (let i = 0; i < roll(1, 6); i++) jewelry.push(randomJewelry());
-      if (pct(30)) magicItems = 3;
+      if (pct(30)) magicItems = rollItems(3);
       break;
     case 'B':
       if (pct(50)) cp = roll(1, 8) * 1000;
@@ -167,7 +174,7 @@ export function rollLairLoot(type: string): LootResult {
       if (pct(25)) gp = roll(1, 6) * 1000;
       if (pct(25)) for (let i = 0; i < roll(1, 6); i++) gems.push(randomGem());
       if (pct(25)) for (let i = 0; i < roll(1, 6); i++) jewelry.push(randomJewelry());
-      if (pct(10)) magicItems = 1;
+      if (pct(10)) magicItems = rollItems(1);
       break;
     case 'C':
       if (pct(20)) cp = roll(1, 12) * 1000;
@@ -175,7 +182,7 @@ export function rollLairLoot(type: string): LootResult {
       if (pct(10)) ep = roll(1, 4) * 1000;
       if (pct(25)) for (let i = 0; i < roll(1, 4); i++) gems.push(randomGem());
       if (pct(25)) for (let i = 0; i < roll(1, 4); i++) jewelry.push(randomJewelry());
-      if (pct(10)) magicItems = 2;
+      if (pct(10)) magicItems = rollItems(2);
       break;
     case 'D':
       if (pct(10)) cp = roll(1, 8) * 1000;
@@ -184,7 +191,7 @@ export function rollLairLoot(type: string): LootResult {
       if (pct(50)) gp = roll(1, 12) * 1000;
       if (pct(30)) for (let i = 0; i < roll(1, 8); i++) gems.push(randomGem());
       if (pct(30)) for (let i = 0; i < roll(1, 8); i++) jewelry.push(randomJewelry());
-      if (pct(20)) magicItems = 3;  // 2 items + 1 potion
+      if (pct(20)) magicItems = rollItems(3);  // 2 items + 1 potion
       break;
     case 'E':
       if (pct(5))  cp = roll(1, 10) * 1000;
@@ -193,7 +200,7 @@ export function rollLairLoot(type: string): LootResult {
       if (pct(25)) gp = roll(1, 12) * 1000;
       if (pct(15)) for (let i = 0; i < roll(1, 10); i++) gems.push(randomGem());
       if (pct(15)) for (let i = 0; i < roll(1, 10); i++) jewelry.push(randomJewelry());
-      if (pct(25)) magicItems = 4;  // 3 items + 1 scroll
+      if (pct(25)) magicItems = rollItems(4);  // 3 items + 1 scroll
       break;
     case 'F':
       if (pct(10)) sp = roll(2, 10) * 1000;
@@ -201,14 +208,14 @@ export function rollLairLoot(type: string): LootResult {
       if (pct(45)) gp = roll(1, 20) * 1000;
       if (pct(30)) for (let i = 0; i < roll(1, 12); i++) gems.push(randomGem());
       if (pct(10)) for (let i = 0; i < roll(1, 12); i++) jewelry.push(randomJewelry());
-      if (pct(30)) magicItems = 4;  // 3 items + 1 potion (no arms/armour)
+      if (pct(30)) magicItems = rollItems(4);  // 3 items + 1 potion (no arms/armour)
       break;
     case 'G':
       if (pct(50)) gp = roll(1, 4) * 10000;
       if (pct(50)) pp = roll(1, 3) * 1000;
       if (pct(30)) for (let i = 0; i < roll(1, 6); i++) gems.push(randomGem());
       if (pct(25)) for (let i = 0; i < roll(1, 3); i++) jewelry.push(randomJewelry());
-      if (pct(35)) magicItems = 5;  // 4 items + 1 scroll
+      if (pct(35)) magicItems = rollItems(5);  // 4 items + 1 scroll
       break;
     case 'H':
       if (pct(25)) cp = roll(3, 8) * 1000;
@@ -218,13 +225,13 @@ export function rollLairLoot(type: string): LootResult {
       if (pct(25)) pp = roll(1, 20) * 1000;
       if (pct(50)) for (let i = 0; i < roll(1, 100); i++) gems.push(randomGem());
       if (pct(50)) for (let i = 0; i < roll(2, 20); i++) jewelry.push(randomJewelry());
-      if (pct(15)) magicItems = 6;  // 4 items + 1 potion + 1 scroll
+      if (pct(15)) magicItems = rollItems(6);  // 4 items + 1 potion + 1 scroll
       break;
     case 'I':
       if (pct(30)) pp = roll(3, 10) * 100;
       if (pct(55)) for (let i = 0; i < roll(2, 6); i++) gems.push(randomGem());
       if (pct(50)) for (let i = 0; i < roll(2, 6); i++) jewelry.push(randomJewelry());
-      if (pct(15)) magicItems = 1;
+      if (pct(15)) magicItems = rollItems(1);
       break;
     case 'J':
       if (pct(25)) cp = roll(1, 4) * 1000;
@@ -238,7 +245,7 @@ export function rollLairLoot(type: string): LootResult {
       if (pct(20)) gp = roll(2, 6) * 1000;
       if (pct(45)) for (let i = 0; i < roll(3, 6); i++) gems.push(randomGem());
       if (pct(45)) for (let i = 0; i < roll(2, 6); i++) jewelry.push(randomJewelry());
-      if (pct(30)) magicItems = 2;
+      if (pct(30)) magicItems = rollItems(2);
       break;
   }
 
@@ -275,7 +282,7 @@ export function generateLoot(
   const coins = zeros();
   const gems: string[] = [];
   const jewelry: string[] = [];
-  let magicItems = 0;
+  let magicItems: string[] = [];
   const lairTypeSet = new Set<string>();
 
   // Count for the summary string
@@ -301,7 +308,7 @@ export function generateLoot(
       Object.assign(coins, add(coins, r.coins));
       gems.push(...r.gems);
       jewelry.push(...r.jewelry);
-      magicItems += r.magic;
+      magicItems.push(...r.magic);
     }
 
     if (template.lairType && template.lairType !== 'none') {

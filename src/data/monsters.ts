@@ -112,6 +112,12 @@ export const MONSTERS: MonsterTemplate[] = [
   { name: 'Yuan-ti (Half-Blood)', hd: '5',     hp: 22, ac:  5, thac0: 15, attacks: '2',   damage: '2d4/2d4',         mv: '12',          tags: ['humanoid'],            individual: 'Q,S',   lairType: 'E',  notes: 'spell abilities; constrict; poison 2d6/rd (save vs. poison)' },
   { name: 'Ogre Mage',            hd: '5+4',   hp: 27, ac:  4, thac0: 15, attacks: '1',   damage: '1d12',            mv: '9, Fl 15',    tags: ['humanoid', 'giant'], speed: 9, individual: 'S,T', lairType: 'F', notes: 'fly; invisibility; charm; sleep; darkness; polymorph' },
 
+  // Human NPCs — match encounter table names exactly so loot/stats auto-fill
+  { name: 'Bandits',               hd: '1',     hp:  5, ac:  7, thac0: 20, attacks: '1',   damage: '1d6',             mv: '12',          tags: ['humanoid'], speed: 3,  individual: 'Q×3',   lairType: 'A',    notes: '1-in-20 is a bandit lord (Ftr 4–8); may be mounted; mix of weapons' },
+  { name: 'Pirates',               hd: '1',     hp:  5, ac:  7, thac0: 20, attacks: '1',   damage: '1d8',             mv: '12',          tags: ['humanoid'], speed: 5,  individual: 'Q×2',   lairType: 'A',    notes: 'similar to bandits; found at sea; 1-in-20 is a pirate captain (Ftr 4–8)' },
+  { name: 'Barbarian Raiders',     hd: '1+1',   hp:  6, ac:  6, thac0: 19, attacks: '1',   damage: '1d8',             mv: '12',          tags: ['humanoid'], speed: 7,  individual: 'Q×3',   lairType: 'B',    notes: 'fierce, fearless fighters; some may berserk (+2 to hit, AC penalty); 1-in-20 is a chieftain (Ftr 4–8)' },
+  { name: 'Duergar',               hd: '1+2',   hp:  6, ac:  4, thac0: 19, attacks: '1',   damage: '1d6',             mv: '6',           tags: ['humanoid'], speed: 4,  individual: 'P×2,Q', lairType: 'F',    notes: 'invisibility & expansion 1/day; immune to paralysis, illusion, magic; sunlight sensitivity; infravision 120\'' },
+
   // ── UNDEAD ───────────────────────────────────────────────────────────────────
   { name: 'Skeleton',             hd: '1',     hp:  5, ac:  7, thac0: 19, attacks: '1',   damage: '1d6',             mv: '12',          tags: ['undead'], individual: 'none', lairType: 'none', notes: 'immune: cold, sleep; edged weapons ½ damage; missile immunity' },
   { name: 'Zombie',               hd: '2',     hp:  9, ac:  8, thac0: 19, attacks: '1',   damage: '1d8',             mv: '6',           tags: ['undead'], individual: 'none', lairType: 'none', notes: 'always acts last in initiative; immune: charm, sleep, hold, poison' },
@@ -165,6 +171,9 @@ export const MONSTERS: MonsterTemplate[] = [
   { name: 'Pegasus',              hd: '4',     hp: 18, ac:  6, thac0: 17, attacks: '3',   damage: '1d8/1d8/1d3',    mv: '24, Fl 48',   tags: ['beast'] },
   { name: 'Giant Eagle',          hd: '4',     hp: 18, ac:  7, thac0: 17, attacks: '3',   damage: '1d4+1/1d4+1/2d6', mv: '3, Fl 48',   tags: ['beast'] },
   { name: 'Roc (Small)',          hd: '6',     hp: 27, ac:  6, thac0: 13, attacks: '3',   damage: '1d6/1d6/2d10',   mv: '6, Fl 48',    tags: ['beast'] },
+  { name: 'Winter Wolf',         hd: '3+3',   hp: 17, ac:  5, thac0: 17, attacks: '1',   damage: '2d4',             mv: '18',          tags: ['beast'],   individual: 'none', lairType: 'none', notes: 'breath: cold cone (6d6, save vs. breath for half); immune to cold; can speak; surprise on 1–4 in 6' },
+  { name: 'Yeti',                hd: '4+4',   hp: 22, ac:  6, thac0: 15, attacks: '2',   damage: '1d6+4/1d6+4',    mv: '15',          tags: ['beast'],   individual: 'none', lairType: 'none', notes: 'hug 2d6 if both paws hit; fear gaze: save vs. paralysis or paralysed 1d6 turns; camouflaged in snow' },
+  { name: 'Remorhaz',            hd: '7+7',   hp: 39, ac:  0, thac0: 13, attacks: '1',   damage: '6d6',             mv: '12',          tags: ['monster'], individual: 'none', lairType: 'none', notes: 'body heat melts metal/wood; swallows prey whole; AC 6 on belly; cold slows it' },
 
   // ── CLASSIC MONSTERS ─────────────────────────────────────────────────────────
   { name: 'Carrion Crawler',      hd: '3+1',   hp: 15, ac:  3, thac0: 17, attacks: '8',   damage: '0+paralysis ×8', mv: '12',          tags: ['monster'], notes: '8 tentacles: paralysis on each hit (save vs. paralysis)' },
@@ -194,6 +203,7 @@ export const MONSTERS: MonsterTemplate[] = [
   { name: 'Otyugh',               hd: '6+6',   hp: 33, ac:  3, thac0: 13, attacks: '3',   damage: '1d8/1d8/1d4+1',  mv: '6',           tags: ['monster'], notes: 'bite causes disease (save vs. poison); 2 tentacles grab (Str check to escape)' },
   { name: 'Naga (Spirit)',        hd: '9',     hp: 41, ac:  4, thac0: 11, attacks: '2',   damage: '1d3+poison/1d6',  mv: '12',          tags: ['monster'], notes: 'spell abilities up to 6th level MU; poison (save or die)' },
   { name: 'Naga (Water)',         hd: '5',     hp: 23, ac:  5, thac0: 15, attacks: '2',   damage: '1d4+poison/1d6',  mv: '12, Sw 18',   tags: ['monster'], notes: 'constriction (2d6/rd); spell abilities (1st-3rd level)' },
+  { name: 'Will-o-Wisp',        hd: '9',     hp: 45, ac: -8, thac0: 11, attacks: '1',   damage: '2d8',             mv: 'Fl 18',       tags: ['monster'], individual: 'none', lairType: 'none', notes: 'immune to most spells; only vulnerable to protection from evil, magic missile; can vary light; lures prey to doom' },
 
   // ── DRAGONS ──────────────────────────────────────────────────────────────────
   { name: 'Pseudodragon',         hd: '2',     hp:  9, ac:  2, thac0: 19, attacks: '3',   damage: '1d2/1d2/1d3',    mv: '6, Fl 24',    tags: ['dragon'], individual: 'none', lairType: 'E', notes: 'tail sting: save vs. poison or sleep 1d6 days; chameleon skin; telepathy' },

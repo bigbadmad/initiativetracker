@@ -83,8 +83,8 @@ export interface LootResult {
   gems: string[];
   /** Jewelry / art object descriptions. */
   jewelry: string[];
-  /** Number of magic items to determine (DM consults DMG tables). */
-  magicItems: number;
+  /** Specific magic items found, rolled from the 2e DMG tables. */
+  magicItems: string[];
   /** Lair treasure type letter(s) for each monster type encountered, e.g. ["C","D"]. */
   lairTypes: string[];
 }

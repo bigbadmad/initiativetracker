@@ -1,5 +1,6 @@
 import { getState, continueLoot } from '../state.ts';
 import { rollLairLoot } from '../data/loot.ts';
+
 import type { LootResult } from '../types.ts';
 import { el, iconBtn, faIcon } from './components.ts';
 
@@ -156,27 +157,39 @@ function buildJewelryBlock(jewelry: string[], parent: HTMLElement): void {
   parent.appendChild(wrap);
 }
 
-function buildMagicBlock(count: number, parent: HTMLElement): void {
-  if (count === 0) return;
+function buildMagicBlock(items: string[], parent: HTMLElement, rerollable = false): void {
+  if (items.length === 0) return;
 
-  const row = el('div', { cls: 'loot-row loot-magic-row' });
+  const wrap = el('div', { cls: 'loot-list-wrap' });
+  const header = el('div', { cls: 'loot-row' });
   const icon = el('span', { cls: 'loot-row-icon' });
   icon.appendChild(faIcon('fa-solid fa-wand-sparkles'));
-  row.appendChild(icon);
-  row.appendChild(el('span', { cls: 'loot-row-label', text: 'Magic Items' }));
-  const valueEl = el('span', { cls: 'loot-row-value loot-magic-value', text: `${count} item${count !== 1 ? 's' : ''}` });
-  row.appendChild(valueEl);
-  parent.appendChild(row);
+  header.appendChild(icon);
+  header.appendChild(el('span', { cls: 'loot-row-label', text: `Magic Items (${items.length})` }));
+  wrap.appendChild(header);
 
-  const hint = el('p', { cls: 'loot-magic-hint', text: 'Determine specifics using DMG random magic item tables.' });
-  parent.appendChild(hint);
+  const list = el('ul', { cls: 'loot-item-list loot-magic-list' });
+  items.forEach((item) => {
+    const li = el('li', { text: item });
+    if (item.endsWith('(C)')) li.classList.add('loot-item-cursed');
+    list.appendChild(li);
+  });
+  wrap.appendChild(list);
+
+  if (rerollable) {
+    wrap.appendChild(
+      el('p', { cls: 'loot-magic-hint', text: 'Items marked (C) are cursed.' }),
+    );
+  }
+
+  parent.appendChild(wrap);
 }
 
 function buildLairResult(loot: LootResult, container: HTMLElement): void {
   buildCoinBlock(loot, container);
   buildGemBlock(loot.gems, container);
   buildJewelryBlock(loot.jewelry, container);
-  buildMagicBlock(loot.magicItems, container);
+  buildMagicBlock(loot.magicItems, container, true);
 
   const hasAny = loot.cp || loot.sp || loot.ep || loot.gp || loot.pp ||
     loot.gems.length || loot.jewelry.length || loot.magicItems;
