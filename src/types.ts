@@ -71,6 +71,13 @@ export type AppPhase = 'setup' | 'initiative' | 'combat' | 'loot';
 
 // -- Loot result ---------------------------------------------------------------
 
+export interface XPEntry {
+  name: string;
+  count: number;
+  xpEach: number;
+  subtotal: number;
+}
+
 export interface LootResult {
   /** Human-readable summary of which monsters were defeated. */
   encounterSummary: string;
@@ -87,6 +94,24 @@ export interface LootResult {
   magicItems: string[];
   /** Lair treasure type letter(s) for each monster type encountered, e.g. ["C","D"]. */
   lairTypes: string[];
+  /** Total XP = monster XP + treasure XP. */
+  xp: number;
+  /** XP from monster defeats alone (2e DMG Table 31). */
+  monsterXP: number;
+  /** XP from the GP value of coins, gems, jewelry, and magic items. */
+  treasureXP: number;
+  /** Per-monster-type XP breakdown. */
+  xpBreakdown: XPEntry[];
+}
+
+// -- Session totals (cumulative across encounters in one session) --------------
+
+export interface SessionLoot {
+  cp: number; sp: number; ep: number; gp: number; pp: number;
+  gems: string[];
+  jewelry: string[];
+  magicItems: string[];
+  xp: number;
 }
 
 // -- Top-level app state ------------------------------------------------------
@@ -100,4 +125,6 @@ export interface AppState {
   inSurprisePhase: boolean;
   /** Populated when transitioning to the 'loot' phase; null otherwise. */
   pendingLoot: LootResult | null;
+  /** Running session totals, accumulated by "Save Loot" on the loot screen. */
+  sessionLoot: SessionLoot;
 }

@@ -1,8 +1,12 @@
-import type { AppState, Combatant } from './types.ts';
+import type { AppState, Combatant, LootResult, SessionLoot } from './types.ts';
 import { calcInitiative, rollD10 } from './combat.ts';
 import { generateLoot } from './data/loot.ts';
 
 // -- Initial state -------------------------------------------------------------
+
+function emptySession(): SessionLoot {
+  return { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0, gems: [], jewelry: [], magicItems: [], xp: 0 };
+}
 
 const initialState: AppState = {
   phase: 'setup',
@@ -11,6 +15,7 @@ const initialState: AppState = {
   currentSegment: 1,
   inSurprisePhase: false,
   pendingLoot: null,
+  sessionLoot: emptySession(),
 };
 
 // -- localStorage persistence --------------------------------------------------
@@ -37,7 +42,13 @@ function loadPersistedState(): AppState {
       atRange: (c.atRange as boolean | undefined) ?? false,
       targetId: (c.targetId as string | null | undefined) ?? null,
     }));
-    return { ...structuredClone(initialState), ...parsed, combatants, pendingLoot: parsed.pendingLoot ?? null };
+    return {
+      ...structuredClone(initialState),
+      ...parsed,
+      combatants,
+      pendingLoot: parsed.pendingLoot ?? null,
+      sessionLoot: (parsed.sessionLoot as SessionLoot | undefined) ?? emptySession(),
+    };
   } catch {
     return structuredClone(initialState);
   }
@@ -219,6 +230,44 @@ export function startNewRound(): void {
   notify();
 }
 
+
+/**
+ * Save this encounter's loot + XP to the session running total, then return to
+ * setup with players pre-loaded.
+ * @param loot      The pending individual loot from the encounter.
+ * @param lairLoot  Any lair treasure rolls the DM made on the loot screen.
+ */
+export function saveAndContinueLoot(loot: LootResult, lairLoot: LootResult[] = []): void {
+  const all = [loot, ...lairLoot];
+  const prev = state.sessionLoot;
+
+  const players = state.combatants
+    .filter((c) => c.type === 'player')
+    .map((c) => ({ ...c, d10Roll: null, totalInitiative: null, prevInitiative: null, isSurprised: false, isHorsDeCombat: false, atRange: false, targetId: null, isActive: true, action: '' }));
+
+  state = {
+    ...initialState,
+    combatants: players,
+    sessionLoot: {
+      cp:          prev.cp + all.reduce((s, l) => s + l.cp, 0),
+      sp:          prev.sp + all.reduce((s, l) => s + l.sp, 0),
+      ep:          prev.ep + all.reduce((s, l) => s + l.ep, 0),
+      gp:          prev.gp + all.reduce((s, l) => s + l.gp, 0),
+      pp:          prev.pp + all.reduce((s, l) => s + l.pp, 0),
+      gems:        [...prev.gems,        ...all.flatMap((l) => l.gems)],
+      jewelry:     [...prev.jewelry,     ...all.flatMap((l) => l.jewelry)],
+      magicItems:  [...prev.magicItems,  ...all.flatMap((l) => l.magicItems)],
+      xp:          prev.xp + all.reduce((s, l) => s + l.xp, 0),
+    },
+  };
+  notify();
+}
+
+/** Reset session totals to zero. */
+export function clearSession(): void {
+  state = { ...state, sessionLoot: emptySession() };
+  notify();
+}
 
 /** Clear loot screen and return to setup with players pre-loaded. */
 export function continueLoot(): void {

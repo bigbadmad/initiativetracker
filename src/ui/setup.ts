@@ -14,6 +14,7 @@ import {
   beginInitiativePhase,
   reorderCombatants,
   importState,
+  clearSession,
 } from '../state.ts';
 import { el, uid, chip, fmtSign, iconBtn, faIcon } from './components.ts';
 
@@ -106,6 +107,9 @@ export function renderSetup(): HTMLElement {
     beginInitiativePhase();
   });
   body.appendChild(startBtn);
+
+  // -- Session totals panel ----------------------------------------------------
+  body.appendChild(buildSessionPanel());
 
   return root;
 }
@@ -222,6 +226,94 @@ function buildEncounterGenerator(onAdd: () => void): HTMLElement {
 
     resultArea.appendChild(actions);
   }
+
+  details.appendChild(body);
+  return details;
+}
+
+// -- Session totals panel ------------------------------------------------------
+
+function buildSessionPanel(): HTMLElement {
+  const { sessionLoot } = getState();
+  const hasData = sessionLoot.xp > 0 || sessionLoot.gems.length > 0 ||
+    sessionLoot.jewelry.length > 0 || sessionLoot.magicItems.length > 0 ||
+    sessionLoot.cp || sessionLoot.sp || sessionLoot.ep ||
+    sessionLoot.gp || sessionLoot.pp;
+
+  const details = el('details', { cls: 'session-panel' });
+  if (hasData) details.setAttribute('open', '');
+
+  const summary = el('summary', { cls: 'session-panel-summary' });
+  summary.appendChild(faIcon('fa-solid fa-star'));
+  if (hasData) {
+    summary.appendChild(document.createTextNode(` Session Totals — ${sessionLoot.xp.toLocaleString()} xp`));
+  } else {
+    summary.appendChild(document.createTextNode(' Session Totals'));
+  }
+  details.appendChild(summary);
+
+  const body = el('div', { cls: 'session-panel-body' });
+
+  if (!hasData) {
+    body.appendChild(el('p', { cls: 'session-empty', text: 'No loot saved yet. Use "Save Loot & XP to Session" on the loot screen after each encounter.' }));
+    details.appendChild(body);
+    return details;
+  }
+
+  // XP
+  const xpRow = el('div', { cls: 'session-row session-xp-row' });
+  xpRow.appendChild(faIcon('fa-solid fa-star'));
+  xpRow.appendChild(el('span', { cls: 'session-label', text: 'Total XP' }));
+  xpRow.appendChild(el('span', { cls: 'session-value session-xp', text: `${sessionLoot.xp.toLocaleString()} xp` }));
+  body.appendChild(xpRow);
+
+  // Coins
+  const coinParts: string[] = [];
+  if (sessionLoot.cp) coinParts.push(`${sessionLoot.cp.toLocaleString()} cp`);
+  if (sessionLoot.sp) coinParts.push(`${sessionLoot.sp.toLocaleString()} sp`);
+  if (sessionLoot.ep) coinParts.push(`${sessionLoot.ep.toLocaleString()} ep`);
+  if (sessionLoot.gp) coinParts.push(`${sessionLoot.gp.toLocaleString()} gp`);
+  if (sessionLoot.pp) coinParts.push(`${sessionLoot.pp.toLocaleString()} pp`);
+  if (coinParts.length > 0) {
+    const coinRow = el('div', { cls: 'session-row' });
+    coinRow.appendChild(faIcon('fa-solid fa-coins'));
+    coinRow.appendChild(el('span', { cls: 'session-label', text: 'Coins' }));
+    coinRow.appendChild(el('span', { cls: 'session-value', text: coinParts.join(' · ') }));
+    body.appendChild(coinRow);
+  }
+
+  // Helper: expandable item list section
+  function buildItemList(icon: string, label: string, items: string[], cursedCheck = false): HTMLElement {
+    const wrap = el('div', { cls: 'session-magic-wrap' });
+    const header = el('div', { cls: 'session-row' });
+    header.appendChild(faIcon(icon));
+    header.appendChild(el('span', { cls: 'session-label', text: label }));
+    header.appendChild(el('span', { cls: 'session-value', text: `${items.length}` }));
+    wrap.appendChild(header);
+    const list = el('ul', { cls: 'session-magic-list' });
+    items.forEach((item) => {
+      const li = el('li', { text: item });
+      if (cursedCheck && item.endsWith('(C)')) li.classList.add('session-item-cursed');
+      list.appendChild(li);
+    });
+    wrap.appendChild(list);
+    return wrap;
+  }
+
+  if (sessionLoot.gems.length > 0)
+    body.appendChild(buildItemList('fa-solid fa-gem', 'Gems', sessionLoot.gems));
+  if (sessionLoot.jewelry.length > 0)
+    body.appendChild(buildItemList('fa-solid fa-ring', 'Jewelry / Art', sessionLoot.jewelry));
+  if (sessionLoot.magicItems.length > 0)
+    body.appendChild(buildItemList('fa-solid fa-wand-sparkles', 'Magic Items', sessionLoot.magicItems, true));
+
+  // Clear button
+  const clearBtn = iconBtn('fa-solid fa-trash', 'Clear Session', 'btn btn-ghost btn-clear-session', () => {
+    if (confirm('Clear all session totals? This cannot be undone.')) {
+      clearSession();
+    }
+  });
+  body.appendChild(clearBtn);
 
   details.appendChild(body);
   return details;
