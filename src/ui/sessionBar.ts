@@ -31,10 +31,17 @@ async function start(): Promise<void> {
   renderBar();
 }
 
-function end(): void {
-  endDmSession();
-  dmSession = null;
-  message = '';
+async function end(): Promise<void> {
+  if (!dmSession) return;
+  message = 'Ending...';
+  renderBar();
+  try {
+    await endDmSession(dmSession);
+    dmSession = null;
+    message = '';
+  } catch (err) {
+    message = err instanceof Error ? `Could not end session: ${err.message}` : 'Could not end session.';
+  }
   renderBar();
 }
 
@@ -57,7 +64,7 @@ function renderBar(): void {
       el('span', { cls: 'session-label', text: 'Online' }),
       el('span', { cls: 'session-code', text: code }),
       iconBtn('fa-solid fa-link', 'Copy link', 'btn btn-secondary', () => void copyLink(code)),
-      btn('End', 'btn btn-ghost', end),
+      btn('End', 'btn btn-ghost', () => void end()),
     );
   } else {
     bar.appendChild(iconBtn('fa-solid fa-wifi', 'Start online session', 'btn btn-secondary', () => void start()));

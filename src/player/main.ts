@@ -1,7 +1,7 @@
 import '../styles.css';
 import type { PublicView } from '../sync/publicView.ts';
 import { syncAvailable } from '../sync/supabase.ts';
-import { joinSession, subscribeToView } from '../sync/session.ts';
+import { claimCombatant, fetchRoster, joinSession, subscribeToView, type RosterEntry, type Seat } from '../sync/session.ts';
 import { el, btn, labeledInput, mount, faIcon } from '../ui/components.ts';
 
 const appEl = document.getElementById('app')!;
@@ -10,6 +10,15 @@ const SAVED_KEY = 'adnd-tracker-player';
 interface SavedSeat {
   code: string;
   name: string;
+}
+
+/** Everything the live screen renders from. */
+interface Live {
+  saved: SavedSeat;
+  seat: Seat;
+  view: PublicView | null;
+  roster: RosterEntry[];
+  notice: string;
 }
 
 let unsubscribe: (() => void) | null = null;
@@ -51,7 +60,7 @@ function renderJoin(error = ''): void {
   const savedName = loadSeat()?.name ?? '';
 
   const codeGroup = labeledInput({ label: 'Session code', id: 'join-code', type: 'text', value: prefill.toUpperCase(), placeholder: 'ABCDE' });
-  const nameGroup = labeledInput({ label: 'Character name', id: 'join-name', type: 'text', value: savedName, placeholder: 'Thorin' });
+  const nameGroup = labeledInput({ label: 'Your name', id: 'join-name', type: 'text', value: savedName, placeholder: 'Sam' });
   const codeInput = codeGroup.querySelector('input')!;
   const nameInput = nameGroup.querySelector('input')!;
   codeInput.maxLength = 5;
@@ -64,7 +73,7 @@ function renderJoin(error = ''): void {
     const code = codeInput.value.trim().toUpperCase();
     const name = nameInput.value.trim();
     if (code.length !== 5 || !name) {
-      status.textContent = 'Enter the 5-letter code and your character name.';
+      status.textContent = 'Enter the 5-character code and your name.';
       return;
     }
     void enter({ code, name });
@@ -76,38 +85,81 @@ function renderJoin(error = ''): void {
   mount(appEl, root);
 }
 
-async function enter(seat: SavedSeat): Promise<void> {
+async function enter(saved: SavedSeat): Promise<void> {
   const { root, body } = shell('Connecting...');
   body.appendChild(el('p', { cls: 'empty-hint', text: 'Joining session...' }));
   mount(appEl, root);
 
   try {
-    const sessionId = await joinSession(seat.code, seat.name);
-    saveSeat(seat);
+    const seat = await joinSession(saved.code, saved.name);
+    saveSeat(saved);
     unsubscribe?.();
-    renderWaiting(seat, null);
-    unsubscribe = subscribeToView(sessionId, (view) => renderWaiting(seat, view));
+    const live: Live = { saved, seat, view: null, roster: [], notice: '' };
+    renderLive(live);
+    unsubscribe = subscribeToView(
+      seat.sessionId,
+      (view) => void onView(live, view),
+      () => leave('The DM ended the session.'),
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Could not join.';
     saveSeat(null);
-    renderJoin(message.includes('unknown session code') ? 'No session with that code.' : message);
+    if (message.includes('unknown session code')) renderJoin('No session with that code.');
+    else if (message.includes('session closed')) renderJoin('That session has ended.');
+    else renderJoin(message);
   }
 }
 
-function leave(): void {
+async function onView(live: Live, view: PublicView): Promise<void> {
+  live.view = view;
+  await refreshRoster(live);
+  renderLive(live);
+}
+
+async function refreshRoster(live: Live): Promise<void> {
+  try {
+    live.roster = await fetchRoster(live.seat.sessionId);
+    const me = live.roster.find((r) => r.id === live.seat.playerId);
+    live.seat = { ...live.seat, combatantId: me?.combatantId ?? null };
+  } catch (err) {
+    console.error('roster fetch failed', err);
+  }
+}
+
+async function claim(live: Live, combatantId: string): Promise<void> {
+  try {
+    await claimCombatant(live.seat.sessionId, combatantId);
+    live.notice = '';
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '';
+    live.notice = message.includes('already taken') ? 'Someone else already picked that character.' : 'Could not pick that character.';
+  }
+  await refreshRoster(live);
+  renderLive(live);
+}
+
+function leave(message = ''): void {
   unsubscribe?.();
   unsubscribe = null;
   saveSeat(null);
-  renderJoin();
+  renderJoin(message);
 }
 
 // -- Live view -----------------------------------------------------------------
 
-function renderWaiting(seat: SavedSeat, view: PublicView | null): void {
-  const subtitle = view?.inSurprisePhase ? 'Surprise Phase' : view && view.phase !== 'setup' ? `Round ${view.roundNumber}` : `Session ${seat.code}`;
+function renderLive(live: Live): void {
+  const { view, seat, saved } = live;
+  const subtitle = view?.inSurprisePhase ? 'Surprise Phase' : view && view.phase !== 'setup' ? `Round ${view.roundNumber}` : `Session ${saved.code}`;
   const { root, body } = shell(subtitle);
 
-  body.appendChild(el('p', { cls: 'player-you', text: `Playing as ${seat.name}` }));
+  const myId = view?.players.some((p) => p.id === seat.combatantId) ? seat.combatantId : null;
+  const me = view?.players.find((p) => p.id === myId);
+
+  if (me) {
+    body.appendChild(el('p', { cls: 'player-you', text: `Playing as ${me.name}` }));
+  } else if (view) {
+    body.appendChild(buildClaimPicker(live, view));
+  }
 
   if (!view) {
     body.appendChild(el('p', { cls: 'empty-hint', text: 'Waiting for the DM...' }));
@@ -119,7 +171,7 @@ function renderWaiting(seat: SavedSeat, view: PublicView | null): void {
     body.appendChild(el('p', { cls: 'player-status', text: 'The encounter is over.' }));
   } else {
     body.appendChild(el('div', { cls: 'player-segment', text: `Segment ${view.currentSegment}` }));
-    const actingMe = view.acting.some((a) => a.type === 'player' && a.name === seat.name);
+    const actingMe = myId !== null && view.acting.some((a) => a.id === myId);
     const box = el('div', { cls: ['player-acting', actingMe ? 'is-me' : ''] });
     box.appendChild(el('p', { cls: 'callout-label', text: actingMe ? 'Your turn to act' : 'Acting now' }));
     if (view.acting.length === 0) {
@@ -142,8 +194,25 @@ function renderWaiting(seat: SavedSeat, view: PublicView | null): void {
     body.appendChild(party);
   }
 
-  body.appendChild(btn('Leave session', 'btn btn-ghost', leave));
+  body.appendChild(btn('Leave session', 'btn btn-ghost', () => leave()));
   mount(appEl, root);
+}
+
+function buildClaimPicker(live: Live, view: PublicView): HTMLElement {
+  const takenByOthers = new Set(
+    live.roster.filter((r) => r.id !== live.seat.playerId && r.combatantId).map((r) => r.combatantId),
+  );
+  const free = view.players.filter((p) => !takenByOthers.has(p.id));
+
+  const box = el('div', { cls: 'player-claim' });
+  box.appendChild(el('h3', { text: 'Which character are you?' }));
+  if (free.length === 0) {
+    box.appendChild(el('p', { cls: 'empty-hint', text: 'No characters available yet. Ask the DM to add yours.' }));
+  } else {
+    free.forEach((p) => box.appendChild(btn(p.name, 'btn btn-secondary', () => void claim(live, p.id))));
+  }
+  if (live.notice) box.appendChild(el('p', { cls: 'player-error', text: live.notice }));
+  return box;
 }
 
 // -- Boot ----------------------------------------------------------------------

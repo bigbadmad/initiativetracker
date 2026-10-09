@@ -1491,3 +1491,5 @@ details[open] .encounter-generator-summary::before { transform: rotate(90deg); }
 .player-party { display: flex; flex-direction: column; gap: 4px; }
 .player-party-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border); }
 .player-party-row.is-down { color: var(--text-muted); text-decoration: line-through; }
+.player-claim { display: flex; flex-direction: column; gap: 8px; padding: 12px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius); }
+.player-claim h3 { margin-bottom: 0; }
