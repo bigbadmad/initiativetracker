@@ -40,11 +40,25 @@ export async function startDmSession(): Promise<DmSession> {
   return session;
 }
 
-/** Closes the session on the server first; local state is only cleared once that succeeds. */
+/**
+ * Closes the session on the server first; local state is only cleared once that succeeds.
+ * Publishing is paused while the close is in flight so a publish can't race it. If the close fails the
+ * held view is resumed, so the session keeps syncing exactly as before.
+ */
 export async function endDmSession(session: DmSession): Promise<void> {
+  closing = true;
+  if (publishTimer) clearTimeout(publishTimer);
+  publishTimer = null;
+  try {
+    const { error } = await getClient().rpc('close_session', { p_code: session.code, p_secret: session.secret });
+    if (error) throw error;
+  } catch (err) {
+    closing = false;
+    if (pending) schedule(0);
+    throw err;
+  }
   cancelPublishing();
-  const { error } = await getClient().rpc('close_session', { p_code: session.code, p_secret: session.secret });
-  if (error) throw error;
+  closing = false;
   try {
     localStorage.removeItem(DM_SESSION_KEY);
   } catch { /* ignore */ }
@@ -56,6 +70,7 @@ interface PublishJob {
 }
 
 let pending: PublishJob | null = null;
+let closing = false;
 let publishTimer: ReturnType<typeof setTimeout> | null = null;
 let lastRevision = 0;
 let retryDelay = RETRY_BASE_MS;
@@ -94,12 +109,12 @@ export function isPermanentPublishError(message: string): boolean {
  */
 export function publishView(session: DmSession, view: PublicView): void {
   pending = { session, view };
-  schedule(PUBLISH_DEBOUNCE_MS);
+  if (!closing) schedule(PUBLISH_DEBOUNCE_MS);
 }
 
 async function flush(): Promise<void> {
   const job = pending;
-  if (!job) return;
+  if (!job || closing) return;
 
   const revision = nextRevision(lastRevision, Date.now());
   lastRevision = revision;
@@ -111,6 +126,7 @@ async function flush(): Promise<void> {
   });
 
   if (!error) lastRevision = Math.max(lastRevision, Number(data));
+  if (closing) return; // the session is being closed; whatever this publish hit no longer matters
   if (pending !== job) return; // a newer view replaced this one while the request was in flight
 
   if (error) {
