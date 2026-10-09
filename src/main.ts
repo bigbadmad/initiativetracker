@@ -1,5 +1,5 @@
 import './styles.css';
-import { registerRenderer, getState, setState, startNewRound } from './state.ts';
+import { registerRenderer, registerPublisher, getState, setState, startNewRound } from './state.ts';
 import { renderSetup } from './ui/setup.ts';
 import { renderInitiative } from './ui/initiative.ts';
 import { renderTracker } from './ui/tracker.ts';
@@ -30,12 +30,13 @@ function renderApp(): void {
   }
 
   mount(appEl, screen);
-  publishCurrent();
 }
 
 registerRenderer(renderApp);
+registerPublisher(publishCurrent);
 renderApp();
 mountSessionBar();
+publishCurrent();
 
 // -- Keyboard navigation (combat phase only) -----------------------------------
 // Space or → advances to the next segment; when the round is over, starts the next round.
