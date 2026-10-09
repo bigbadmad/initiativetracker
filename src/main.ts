@@ -5,6 +5,7 @@ import { renderInitiative } from './ui/initiative.ts';
 import { renderTracker } from './ui/tracker.ts';
 import { renderLoot } from './ui/loot.ts';
 import { mount } from './ui/components.ts';
+import { mountSessionBar, publishCurrent } from './ui/sessionBar.ts';
 import { maxInitiativeSegment, nextActiveSegment } from './combat.ts';
 
 const appEl = document.getElementById('app')!;
@@ -29,10 +30,12 @@ function renderApp(): void {
   }
 
   mount(appEl, screen);
+  publishCurrent();
 }
 
 registerRenderer(renderApp);
 renderApp();
+mountSessionBar();
 
 // -- Keyboard navigation (combat phase only) -----------------------------------
 // Space or → advances to the next segment; when the round is over, starts the next round.
