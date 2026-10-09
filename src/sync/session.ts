@@ -100,6 +100,12 @@ export async function joinSession(code: string, name: string): Promise<Seat> {
   return { sessionId: seat.session_id, playerId: seat.player_id, combatantId: seat.combatant_id };
 }
 
+/** Deletes this player's seat so their character claim is freed for others. */
+export async function leaveSession(sessionId: string): Promise<void> {
+  const { error } = await getClient().rpc('leave_session', { p_session_id: sessionId });
+  if (error) throw error;
+}
+
 export async function claimCombatant(sessionId: string, combatantId: string): Promise<void> {
   const { error } = await getClient().rpc('claim_combatant', {
     p_session_id: sessionId,

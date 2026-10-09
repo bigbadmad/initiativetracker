@@ -1,7 +1,7 @@
 import '../styles.css';
 import type { PublicView } from '../sync/publicView.ts';
 import { syncAvailable } from '../sync/supabase.ts';
-import { claimCombatant, fetchRoster, joinSession, subscribeToView, type RosterEntry, type Seat } from '../sync/session.ts';
+import { claimCombatant, fetchRoster, joinSession, leaveSession, subscribeToView, type RosterEntry, type Seat } from '../sync/session.ts';
 import { el, btn, labeledInput, mount, faIcon } from '../ui/components.ts';
 
 const appEl = document.getElementById('app')!;
@@ -138,6 +138,19 @@ async function claim(live: Live, combatantId: string): Promise<void> {
   renderLive(live);
 }
 
+/** Deliberate leave: free the seat (and its character claim) on the server before forgetting it locally. */
+async function leaveAndRelease(live: Live): Promise<void> {
+  try {
+    await leaveSession(live.seat.sessionId);
+  } catch (err) {
+    console.error('leave_session failed', err);
+    live.notice = 'Could not leave the session. Check your connection and try again.';
+    renderLive(live);
+    return;
+  }
+  leave();
+}
+
 function leave(message = ''): void {
   unsubscribe?.();
   unsubscribe = null;
@@ -194,7 +207,8 @@ function renderLive(live: Live): void {
     body.appendChild(party);
   }
 
-  body.appendChild(btn('Leave session', 'btn btn-ghost', () => leave()));
+  if (live.notice) body.appendChild(el('p', { cls: 'player-error', text: live.notice }));
+  body.appendChild(btn('Leave session', 'btn btn-ghost', () => void leaveAndRelease(live)));
   mount(appEl, root);
 }
 
@@ -211,7 +225,6 @@ function buildClaimPicker(live: Live, view: PublicView): HTMLElement {
   } else {
     free.forEach((p) => box.appendChild(btn(p.name, 'btn btn-secondary', () => void claim(live, p.id))));
   }
-  if (live.notice) box.appendChild(el('p', { cls: 'player-error', text: live.notice }));
   return box;
 }
 
