@@ -65,9 +65,17 @@ export function registerRenderer(fn: () => void): void {
   onStateChange = fn;
 }
 
+/** Called after every change, including silent ones that skip the re-render - set by main.ts to sync players. */
+let onPublish: (() => void) | null = null;
+
+export function registerPublisher(fn: (() => void) | null): void {
+  onPublish = fn;
+}
+
 function notify(): void {
   persistState(state);
   onStateChange?.();
+  onPublish?.();
 }
 
 // -- Read ----------------------------------------------------------------------
@@ -110,6 +118,7 @@ export function updateCombatantSilent(id: string, patch: Partial<Combatant>): vo
     ),
   };
   persistState(state);
+  onPublish?.();
 }
 
 export function removeCombatant(id: string): void {

@@ -22,6 +22,8 @@ interface Live {
 }
 
 let unsubscribe: (() => void) | null = null;
+/** The live session on screen. Async handlers compare against it so a late response never redraws a screen the player has left. */
+let current: Live | null = null;
 
 function loadSeat(): SavedSeat | null {
   try {
@@ -95,6 +97,7 @@ async function enter(saved: SavedSeat): Promise<void> {
     saveSeat(saved);
     unsubscribe?.();
     const live: Live = { saved, seat, view: null, roster: [], notice: '' };
+    current = live;
     renderLive(live);
     unsubscribe = subscribeToView(
       seat.sessionId,
@@ -111,9 +114,10 @@ async function enter(saved: SavedSeat): Promise<void> {
 }
 
 async function onView(live: Live, view: PublicView): Promise<void> {
+  if (current !== live) return;
   live.view = view;
   await refreshRoster(live);
-  renderLive(live);
+  if (current === live) renderLive(live);
 }
 
 async function refreshRoster(live: Live): Promise<void> {
@@ -135,7 +139,7 @@ async function claim(live: Live, combatantId: string): Promise<void> {
     live.notice = message.includes('already taken') ? 'Someone else already picked that character.' : 'Could not pick that character.';
   }
   await refreshRoster(live);
-  renderLive(live);
+  if (current === live) renderLive(live);
 }
 
 /** Deliberate leave: free the seat (and its character claim) on the server before forgetting it locally. */
@@ -145,7 +149,7 @@ async function leaveAndRelease(live: Live): Promise<void> {
   } catch (err) {
     console.error('leave_session failed', err);
     live.notice = 'Could not leave the session. Check your connection and try again.';
-    renderLive(live);
+    if (current === live) renderLive(live);
     return;
   }
   leave();
@@ -154,6 +158,7 @@ async function leaveAndRelease(live: Live): Promise<void> {
 function leave(message = ''): void {
   unsubscribe?.();
   unsubscribe = null;
+  current = null;
   saveSeat(null);
   renderJoin(message);
 }
