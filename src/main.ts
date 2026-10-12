@@ -6,6 +6,7 @@ import { renderTracker } from './ui/tracker.ts';
 import { renderLoot } from './ui/loot.ts';
 import { mount } from './ui/components.ts';
 import { mountSessionBar, publishCurrent } from './ui/sessionBar.ts';
+import { dmIsMidEdit } from './ui/editing.ts';
 import { maxInitiativeSegment, nextActiveSegment } from './combat.ts';
 
 const appEl = document.getElementById('app')!;
@@ -32,7 +33,33 @@ function renderApp(): void {
   mount(appEl, screen);
 }
 
-registerRenderer(renderApp);
+const RENDER_RETRY_MS = 400;
+let renderRetry: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Changes made by the DM render immediately, as before. A change that arrived over the network
+ * (a player's declaration) waits until the DM is not mid-edit, then renders once.
+ */
+function renderRequested(req: { remote?: boolean }): void {
+  if (!req.remote) {
+    if (renderRetry) clearTimeout(renderRetry);
+    renderRetry = null;
+    renderApp();
+    return;
+  }
+  if (renderRetry) return;
+  const attempt = (): void => {
+    if (dmIsMidEdit()) {
+      renderRetry = setTimeout(attempt, RENDER_RETRY_MS);
+      return;
+    }
+    renderRetry = null;
+    renderApp();
+  };
+  attempt();
+}
+
+registerRenderer(renderRequested);
 registerPublisher(publishCurrent);
 renderApp();
 mountSessionBar();

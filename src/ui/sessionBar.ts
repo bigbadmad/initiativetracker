@@ -1,4 +1,4 @@
-import { toPublicView } from '../sync/publicView.ts';
+import { toPlayerTotals, toPublicView } from '../sync/publicView.ts';
 import { syncAvailable } from '../sync/supabase.ts';
 import {
   endDmSession,
@@ -9,8 +9,13 @@ import {
   type DmSession,
   type PublishStatus,
 } from '../sync/session.ts';
-import { getState } from '../state.ts';
+import { queueTotals, resetTotals, startDeclarationPolling, type DeclarationTarget } from '../sync/declarations.ts';
+import { createAutoLocker } from '../sync/autoLock.ts';
+import { applyDeclarations, getState, lockInitiative } from '../state.ts';
 import { el, btn, iconBtn } from './components.ts';
+import { dmIsMidEdit } from './editing.ts';
+
+const AUTOLOCK_KEY = 'adnd-tracker-autolock';
 
 let dmSession: DmSession | null = syncAvailable ? resumeDmSession() : null;
 let message = '';
@@ -18,11 +23,66 @@ let syncStatus: PublishStatus = { state: 'ok' };
 let busy = false;
 let bar: HTMLElement | null = null;
 let liveRegion: HTMLElement | null = null;
+let stopPolling: (() => void) | null = null;
+let autoLock = loadAutoLock();
 
-/** Push the current public view to players. Called after every state change. */
+function loadAutoLock(): boolean {
+  try {
+    return localStorage.getItem(AUTOLOCK_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+}
+
+function setAutoLock(on: boolean): void {
+  autoLock = on;
+  try {
+    localStorage.setItem(AUTOLOCK_KEY, on ? 'on' : 'off');
+  } catch { /* the choice just resets next load */ }
+}
+
+/** The round that is currently collecting declarations, or null when none is. */
+function declarationTarget(): DeclarationTarget | null {
+  const { phase, encounterId, roundNumber } = getState();
+  return phase === 'initiative' && encounterId ? { encounterId, round: roundNumber } : null;
+}
+
+const autoLocker = createAutoLocker({
+  isMidEdit: dmIsMidEdit,
+  getTarget: declarationTarget,
+  lock: () => {
+    if (autoLock) lockInitiative();
+  },
+});
+
+function beginPolling(): void {
+  stopPolling?.();
+  stopPolling = startDeclarationPolling({
+    getSession: () => dmSession,
+    getTarget: declarationTarget,
+    onDeclarations: (target, declarations) => {
+      const applied = applyDeclarations(target.encounterId, target.round, declarations);
+      // Only a remote declaration triggers this, so the DM typing in the last roll by hand is never overridden.
+      if (applied.length > 0 && autoLock) autoLocker.request(target);
+    },
+  });
+}
+
+function endPolling(): void {
+  stopPolling?.();
+  stopPolling = null;
+  autoLocker.cancel();
+  resetTotals();
+}
+
+/** Push the current public view to players, and their computed totals to them privately. Called after every state change. */
 export function publishCurrent(): void {
   if (!dmSession) return;
-  publishView(dmSession, toPublicView(getState()));
+  const state = getState();
+  publishView(dmSession, toPublicView(state));
+  if ((state.phase === 'initiative' || state.phase === 'combat') && state.encounterId) {
+    queueTotals(dmSession, { encounterId: state.encounterId, round: state.roundNumber }, toPlayerTotals(state));
+  }
 }
 
 function playerLink(code: string): string {
@@ -38,6 +98,7 @@ async function start(): Promise<void> {
     dmSession = await startDmSession();
     message = '';
     syncStatus = { state: 'ok' };
+    beginPolling();
     publishCurrent();
   } catch (err) {
     message = err instanceof Error ? err.message : 'Could not start session.';
@@ -55,6 +116,7 @@ async function end(): Promise<void> {
   try {
     await endDmSession(dmSession);
     dmSession = null;
+    endPolling();
     message = '';
     syncStatus = { state: 'ok' };
   } catch (err) {
@@ -89,10 +151,19 @@ function renderBar(): void {
     const code = dmSession.code;
     const endBtn = btn('End', 'btn btn-ghost', () => void end());
     endBtn.disabled = busy;
+    const autoLockBox = el('input', { attrs: { type: 'checkbox' } });
+    autoLockBox.checked = autoLock;
+    autoLockBox.addEventListener('change', () => setAutoLock(autoLockBox.checked));
+    const autoLockLabel = el('label', {
+      cls: 'session-autolock',
+      attrs: { title: 'Begin combat automatically once every player has declared' },
+    });
+    autoLockLabel.append(autoLockBox, document.createTextNode(' Auto-lock'));
     nodes.push(
       el('span', { cls: 'session-label', text: 'Online' }),
       el('span', { cls: 'session-code', text: code }),
       iconBtn('fa-solid fa-link', 'Copy link', 'btn btn-secondary', () => void copyLink(code)),
+      autoLockLabel,
       endBtn,
     );
   } else {
@@ -116,6 +187,7 @@ export function mountSessionBar(): void {
   liveRegion = el('span', { cls: 'session-warning', attrs: { role: 'status', 'aria-live': 'polite' } });
   bar.appendChild(liveRegion);
   document.body.appendChild(bar);
+  if (dmSession) beginPolling();
   setPublishStatusListener((status) => {
     syncStatus = status;
     renderBar();

@@ -138,6 +138,42 @@ export function firstActiveSegment(
 }
 
 /**
+ * Whether a combatant takes part in this round's initiative roll. Surprised combatants sit out
+ * the surprise phase only; hors de combat and defeated combatants sit out entirely.
+ */
+export function canActThisRound(c: Combatant, inSurprisePhase: boolean): boolean {
+  return c.isActive && !c.isHorsDeCombat && !(c.isSurprised && inSurprisePhase);
+}
+
+export type DeclaredKind = 'weapon_speed' | 'spell_casting';
+
+export interface DeclaredAction {
+  kind: DeclaredKind;
+  label: string;
+  value: number;
+}
+
+/**
+ * Replace the combatant's primary weapon/spell modifier with a declared action, leaving the
+ * standing modifiers (dex reaction, haste, slow) untouched - those belong to the DM, so a player
+ * can never declare their own haste. Mirrors the per-round action form on the initiative screen.
+ */
+export function applyDeclaredAction(
+  modifiers: Modifier[],
+  action: DeclaredAction,
+  newId: string,
+): Modifier[] {
+  const primary = modifiers.find((m) => m.kind === 'weapon_speed' || m.kind === 'spell_casting');
+  const label = action.label.trim();
+  if (!primary) {
+    return [...modifiers, { id: newId, kind: action.kind, label: label || 'Attack', value: action.value }];
+  }
+  return modifiers.map((m) =>
+    m.id === primary.id ? { ...m, kind: action.kind, label: label || m.label, value: action.value } : m,
+  );
+}
+
+/**
  * Returns a human-readable summary of a combatant's modifier stack.
  */
 export function describeModifiers(modifiers: Modifier[]): string {

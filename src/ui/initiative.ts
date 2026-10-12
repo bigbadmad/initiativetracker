@@ -1,6 +1,6 @@
 ﻿import type { Combatant, ModifierKind } from '../types.ts';
-import { getState, setState, updateCombatant, updateCombatantSilent } from '../state.ts';
-import { calcInitiative, rollD10, firstActiveSegment, maxInitiativeSegment } from '../combat.ts';
+import { getState, lockInitiative, setState, updateCombatant, updateCombatantSilent } from '../state.ts';
+import { calcInitiative, canActThisRound, rollD10 } from '../combat.ts';
 import { el, fmtSign, uid, iconBtn } from './components.ts';
 
 // -- Render initiative entry screen --------------------------------------------
@@ -23,6 +23,21 @@ export function renderInitiative(): HTMLElement {
       el('div', {
         cls: 'notice notice-warning',
         text: 'Surprise round active: surprised combatants cannot act.'
+      }),
+    );
+  }
+
+  // Who the round is still waiting on - most useful with remote players, but a checklist offline too.
+  const rollers = state.combatants.filter((c) => c.type === 'player' && canActThisRound(c, state.inSurprisePhase));
+  if (rollers.length > 0) {
+    const waiting = rollers.filter((c) => c.d10Roll === null);
+    const ready = waiting.length === 0;
+    root.appendChild(
+      el('div', {
+        cls: ['declaration-status', ready ? 'is-ready' : ''],
+        text: ready
+          ? `All ${rollers.length} players are in.`
+          : `${rollers.length - waiting.length} of ${rollers.length} players are in. Waiting on: ${waiting.map((c) => c.name).join(', ')}`,
       }),
     );
   }
@@ -58,34 +73,8 @@ export function renderInitiative(): HTMLElement {
 
   // Lock in and sort
   const lockBtn = iconBtn('fa-solid fa-swords', 'Lock In & Begin Combat', 'btn btn-primary', () => {
-    const current = getState();
-
-    // Validate: active combatants that can act must have a roll
-    const missing = current.combatants.filter(
-      (c) =>
-        c.isActive &&
-        !c.isHorsDeCombat &&
-        !(c.isSurprised && current.inSurprisePhase) &&
-        c.d10Roll === null,
-    );
-    if (missing.length > 0) {
-      alert(`Missing d10 roll for: ${missing.map((c) => c.name).join(', ')}`);
-      return;
-    }
-
-    // Assign sentinel initiative (99) to combatants that won't act this round
-    const updatedCombatants = current.combatants.map((c) => {
-      if (c.isActive && c.isSurprised && current.inSurprisePhase)
-        return { ...c, d10Roll: null, totalInitiative: 99 };
-      if (c.isActive && c.isHorsDeCombat)
-        return { ...c, d10Roll: null, totalInitiative: 99 };
-      return c;
-    });
-
-    const maxSeg = maxInitiativeSegment(updatedCombatants);
-    const startSeg = firstActiveSegment(updatedCombatants, maxSeg, current.inSurprisePhase);
-
-    setState({ phase: 'combat', currentSegment: startSeg, combatants: updatedCombatants });
+    const result = lockInitiative();
+    if (!result.ok && result.reason === 'missing') alert(`Missing d10 roll for: ${result.missing.join(', ')}`);
   });
   bar.appendChild(lockBtn);
 

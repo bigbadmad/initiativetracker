@@ -13,7 +13,7 @@ type Session = typeof import('./session.ts');
 const dm = { code: 'ABCDE', secret: 'secret-secret-secret' };
 
 function view(segment: number): PublicView {
-  return { phase: 'combat', roundNumber: 1, currentSegment: segment, inSurprisePhase: false, acting: [], players: [] };
+  return { phase: 'combat', encounterId: null, roundNumber: 1, currentSegment: segment, inSurprisePhase: false, acting: [], players: [] };
 }
 
 function sentSegments(): number[] {
