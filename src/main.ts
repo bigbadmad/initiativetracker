@@ -32,7 +32,43 @@ function renderApp(): void {
   mount(appEl, screen);
 }
 
-registerRenderer(renderApp);
+const RENDER_RETRY_MS = 400;
+let renderRetry: ReturnType<typeof setTimeout> | null = null;
+
+/** True while the DM is typing in a field or has a button held down, when a re-render would eat their input or click. */
+function dmIsMidEdit(): boolean {
+  const active = document.activeElement;
+  const typing =
+    active !== null &&
+    appEl.contains(active) &&
+    (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT');
+  return typing || appEl.querySelector(':active') !== null;
+}
+
+/**
+ * Changes made by the DM render immediately, as before. A change that arrived over the network
+ * (a player's declaration) waits until the DM is not mid-edit, then renders once.
+ */
+function renderRequested(req: { remote?: boolean }): void {
+  if (!req.remote) {
+    if (renderRetry) clearTimeout(renderRetry);
+    renderRetry = null;
+    renderApp();
+    return;
+  }
+  if (renderRetry) return;
+  const attempt = (): void => {
+    if (dmIsMidEdit()) {
+      renderRetry = setTimeout(attempt, RENDER_RETRY_MS);
+      return;
+    }
+    renderRetry = null;
+    renderApp();
+  };
+  attempt();
+}
+
+registerRenderer(renderRequested);
 registerPublisher(publishCurrent);
 renderApp();
 mountSessionBar();

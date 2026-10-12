@@ -1,6 +1,18 @@
 import type { AppState, Combatant, LootResult, SessionLoot } from './types.ts';
-import { calcInitiative, rollD10 } from './combat.ts';
+import {
+  applyDeclaredAction,
+  calcInitiative,
+  canActThisRound,
+  firstActiveSegment,
+  maxInitiativeSegment,
+  rollD10,
+  type DeclaredKind,
+} from './combat.ts';
 import { generateLoot } from './data/loot.ts';
+
+function newId(): string {
+  return crypto.randomUUID().slice(0, 8);
+}
 
 // -- Initial state -------------------------------------------------------------
 
@@ -48,6 +60,8 @@ function loadPersistedState(): AppState {
       combatants,
       pendingLoot: parsed.pendingLoot ?? null,
       sessionLoot: (parsed.sessionLoot as SessionLoot | undefined) ?? emptySession(),
+      // A save made mid-encounter before encounter ids existed still needs one to accept remote declarations.
+      ...(parsed.phase !== 'setup' && !parsed.encounterId ? { encounterId: crypto.randomUUID() } : {}),
     };
   } catch {
     return structuredClone(initialState);
@@ -58,10 +72,18 @@ function loadPersistedState(): AppState {
 
 let state: AppState = loadPersistedState();
 
-/** Registered render callback - set by main.ts. */
-let onStateChange: (() => void) | null = null;
+/**
+ * Why a render was requested. `remote` changes arrive from the network while the DM may be mid-edit,
+ * so the renderer is allowed to hold them back until the DM has stopped typing.
+ */
+export interface RenderRequest {
+  remote?: boolean;
+}
 
-export function registerRenderer(fn: () => void): void {
+/** Registered render callback - set by main.ts. */
+let onStateChange: ((req: RenderRequest) => void) | null = null;
+
+export function registerRenderer(fn: (req: RenderRequest) => void): void {
   onStateChange = fn;
 }
 
@@ -72,9 +94,9 @@ export function registerPublisher(fn: (() => void) | null): void {
   onPublish = fn;
 }
 
-function notify(): void {
+function notify(req: RenderRequest = {}): void {
   persistState(state);
-  onStateChange?.();
+  onStateChange?.(req);
   onPublish?.();
 }
 
@@ -184,7 +206,11 @@ export function importState(newState: AppState): void {
     atRange: (c.atRange as boolean | undefined) ?? false,
     targetId: (c.targetId as string | null | undefined) ?? null,
   }));
-  state = { ...newState, combatants };
+  state = {
+    ...newState,
+    combatants,
+    ...(newState.phase !== 'setup' && !newState.encounterId ? { encounterId: crypto.randomUUID() } : {}),
+  };
   notify();
 }
 
@@ -215,8 +241,81 @@ export function beginInitiativePhase(): void {
     inSurprisePhase: hasSurprise,
     roundNumber: hasSurprise ? 0 : 1,
     combatants: withAutoRolledMonsters(state.combatants),
+    encounterId: crypto.randomUUID(),
   };
   notify();
+}
+
+export type LockResult = { ok: true } | { ok: false; missing: string[] };
+
+/**
+ * Close the initiative phase and begin combat. Refuses (and changes nothing) while anyone who can
+ * act this round still has no roll. Combatants who sit the round out get the 99 sentinel.
+ */
+export function lockInitiative(): LockResult {
+  const missing = state.combatants.filter(
+    (c) => canActThisRound(c, state.inSurprisePhase) && c.d10Roll === null,
+  );
+  if (missing.length > 0) return { ok: false, missing: missing.map((c) => c.name) };
+
+  const combatants = state.combatants.map((c) =>
+    c.isActive && (c.isHorsDeCombat || (c.isSurprised && state.inSurprisePhase))
+      ? { ...c, d10Roll: null, totalInitiative: 99 }
+      : c,
+  );
+  const maxSeg = maxInitiativeSegment(combatants);
+  const startSeg = firstActiveSegment(combatants, maxSeg, state.inSurprisePhase);
+  state = { ...state, phase: 'combat', currentSegment: startSeg, combatants };
+  notify();
+  return { ok: true };
+}
+
+/** A player's declaration as returned by the server: the action they chose and the d10 it rolled. */
+export interface RemoteDeclaration {
+  combatantId: string;
+  kind: DeclaredKind;
+  label: string;
+  value: number;
+  d10: number;
+}
+
+/**
+ * Merge declarations fetched from the server into the initiative round they were made for.
+ * Never overwrites a roll the DM already has (physical dice entered at the table win), and ignores
+ * a batch that no longer matches the encounter, round or phase - the DM may have moved on while
+ * the request was in flight. Returns the ids of the combatants that were updated.
+ */
+export function applyDeclarations(
+  encounterId: string,
+  round: number,
+  declarations: RemoteDeclaration[],
+): string[] {
+  if (state.phase !== 'initiative' || state.encounterId !== encounterId || state.roundNumber !== round) {
+    return [];
+  }
+  const byId = new Map(declarations.map((d) => [d.combatantId, d]));
+  const applied: string[] = [];
+
+  const combatants = state.combatants.map((c) => {
+    const d = byId.get(c.id);
+    if (!d || c.type !== 'player' || c.d10Roll !== null) return c;
+    if (!canActThisRound(c, state.inSurprisePhase)) return c;
+    if (!Number.isInteger(d.d10) || d.d10 < 1 || d.d10 > 10) return c;
+    const modifiers = applyDeclaredAction(c.modifiers, d, newId());
+    applied.push(c.id);
+    return {
+      ...c,
+      action: d.label.trim() || c.action,
+      modifiers,
+      d10Roll: d.d10,
+      totalInitiative: calcInitiative(d.d10, modifiers),
+    };
+  });
+
+  if (applied.length === 0) return [];
+  state = { ...state, combatants };
+  notify({ remote: true });
+  return applied;
 }
 
 /** Reset rolls for a new round, bump roundNumber, auto-roll monsters, return to initiative phase. */

@@ -134,4 +134,9 @@ export interface AppState {
   pendingLoot: LootResult | null;
   /** Running session totals, accumulated by "Save Loot" on the loot screen. */
   sessionLoot: SessionLoot;
+  /**
+   * Identifies the current encounter. Round numbers restart at 1 for every encounter, so remote
+   * declarations are keyed on (encounterId, roundNumber). Assigned by beginInitiativePhase.
+   */
+  encounterId?: string;
 }

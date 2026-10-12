@@ -1,15 +1,43 @@
 import '../styles.css';
 import type { PublicView } from '../sync/publicView.ts';
 import { syncAvailable } from '../sync/supabase.ts';
-import { claimCombatant, fetchRoster, joinSession, leaveSession, subscribeToView, type RosterEntry, type Seat } from '../sync/session.ts';
+import {
+  claimCombatant,
+  fetchMyDeclaration,
+  fetchRoster,
+  joinSession,
+  leaveSession,
+  submitDeclaration,
+  subscribeToMyDeclarations,
+  subscribeToView,
+  type DeclarationInput,
+  type MyDeclaration,
+  type RosterEntry,
+  type Seat,
+} from '../sync/session.ts';
 import { el, btn, labeledInput, mount, faIcon } from '../ui/components.ts';
+import { declareErrorMessage, declareStatus, declareStatusKey, type DeclareStatus } from './declare.ts';
 
 const appEl = document.getElementById('app')!;
 const SAVED_KEY = 'adnd-tracker-player';
+const DRAFT_KEY = 'adnd-tracker-player-action';
 
 interface SavedSeat {
   code: string;
   name: string;
+}
+
+/** The persistent regions of the live screen. Each is updated in place so a form is never rebuilt under a typing player. */
+interface LiveUi {
+  root: HTMLElement;
+  subtitle: HTMLElement;
+  identity: HTMLElement;
+  declare: HTMLElement;
+  phase: HTMLElement;
+  party: HTMLElement;
+  notice: HTMLElement;
+  /** Identifies what the declare region currently shows; it is only rebuilt when this changes. */
+  declareKey: string | null;
 }
 
 /** Everything the live screen renders from. */
@@ -19,9 +47,13 @@ interface Live {
   view: PublicView | null;
   roster: RosterEntry[];
   notice: string;
+  declaration: MyDeclaration | null;
+  /** The action last typed or submitted; pre-fills the form and survives reloads. */
+  draft: DeclarationInput;
+  ui: LiveUi;
 }
 
-let unsubscribe: (() => void) | null = null;
+let teardown: Array<() => void> = [];
 /** The live session on screen. Async handlers compare against it so a late response never redraws a screen the player has left. */
 let current: Live | null = null;
 
@@ -43,6 +75,35 @@ function saveSeat(seat: SavedSeat | null): void {
   } catch { /* storage unavailable: player rejoins manually next time */ }
 }
 
+function loadDraft(): DeclarationInput {
+  const fallback: DeclarationInput = { kind: 'weapon_speed', label: '', value: 5 };
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as Partial<DeclarationInput>;
+    return {
+      kind: parsed.kind === 'spell_casting' ? 'spell_casting' : 'weapon_speed',
+      label: typeof parsed.label === 'string' ? parsed.label.slice(0, 40) : '',
+      value: Number.isInteger(parsed.value) ? Math.min(30, Math.max(0, parsed.value as number)) : fallback.value,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function saveDraft(draft: DeclarationInput): void {
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+  } catch { /* the form simply starts blank next time */ }
+}
+
+/** Supabase errors are plain objects with a message, not always Error instances. */
+function errorText(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  const message = (err as { message?: unknown } | null)?.message;
+  return typeof message === 'string' ? message : '';
+}
+
 function shell(subtitle: string): { root: HTMLElement; body: HTMLElement } {
   const root = el('div', { cls: 'screen player-screen' });
   const header = el('header', { cls: 'screen-header' });
@@ -52,6 +113,11 @@ function shell(subtitle: string): { root: HTMLElement; body: HTMLElement } {
   const body = el('div', { cls: 'player-body' });
   root.append(header, body);
   return { root, body };
+}
+
+function stopListening(): void {
+  teardown.forEach((stop) => stop());
+  teardown = [];
 }
 
 // -- Join screen ---------------------------------------------------------------
@@ -95,17 +161,21 @@ async function enter(saved: SavedSeat): Promise<void> {
   try {
     const seat = await joinSession(saved.code, saved.name);
     saveSeat(saved);
-    unsubscribe?.();
-    const live: Live = { saved, seat, view: null, roster: [], notice: '' };
+    stopListening();
+    const live = createLive(saved, seat);
     current = live;
+    mount(appEl, live.ui.root);
     renderLive(live);
-    unsubscribe = subscribeToView(
-      seat.sessionId,
-      (view) => void onView(live, view),
-      () => leave('The DM ended the session.'),
-    );
+    teardown = [
+      subscribeToView(
+        seat.sessionId,
+        (view) => void onView(live, view),
+        () => leave('The DM ended the session.'),
+      ),
+      subscribeToMyDeclarations(seat.sessionId, () => void onDeclarationChange(live)),
+    ];
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Could not join.';
+    const message = errorText(err) || 'Could not join.';
     saveSeat(null);
     if (message.includes('unknown session code')) renderJoin('No session with that code.');
     else if (message.includes('session closed')) renderJoin('That session has ended.');
@@ -117,7 +187,14 @@ async function onView(live: Live, view: PublicView): Promise<void> {
   if (current !== live) return;
   live.view = view;
   await refreshRoster(live);
-  if (current === live) renderLive(live);
+  await refreshDeclaration(live);
+  renderLive(live);
+}
+
+async function onDeclarationChange(live: Live): Promise<void> {
+  if (current !== live) return;
+  await refreshDeclaration(live);
+  renderLive(live);
 }
 
 async function refreshRoster(live: Live): Promise<void> {
@@ -130,16 +207,36 @@ async function refreshRoster(live: Live): Promise<void> {
   }
 }
 
+/** Load this character's declaration for the round on screen. A stale response for an earlier round is discarded. */
+async function refreshDeclaration(live: Live): Promise<void> {
+  const view = live.view;
+  const characterId = live.seat.combatantId;
+  if (!view || !characterId || view.encounterId === null || (view.phase !== 'initiative' && view.phase !== 'combat')) {
+    live.declaration = null;
+    return;
+  }
+  const { encounterId, roundNumber } = view;
+  try {
+    const found = await fetchMyDeclaration(live.seat.sessionId, encounterId, roundNumber, characterId);
+    const now = live.view;
+    if (current === live && now && now.encounterId === encounterId && now.roundNumber === roundNumber) {
+      live.declaration = found;
+    }
+  } catch (err) {
+    console.error('declaration fetch failed', err);
+  }
+}
+
 async function claim(live: Live, combatantId: string): Promise<void> {
   try {
     await claimCombatant(live.seat.sessionId, combatantId);
     live.notice = '';
   } catch (err) {
-    const message = err instanceof Error ? err.message : '';
-    live.notice = message.includes('already taken') ? 'Someone else already picked that character.' : 'Could not pick that character.';
+    live.notice = errorText(err).includes('already taken') ? 'Someone else already picked that character.' : 'Could not pick that character.';
   }
   await refreshRoster(live);
-  if (current === live) renderLive(live);
+  await refreshDeclaration(live);
+  renderLive(live);
 }
 
 /** Deliberate leave: free the seat (and its character claim) on the server before forgetting it locally. */
@@ -149,72 +246,104 @@ async function leaveAndRelease(live: Live): Promise<void> {
   } catch (err) {
     console.error('leave_session failed', err);
     live.notice = 'Could not leave the session. Check your connection and try again.';
-    if (current === live) renderLive(live);
+    renderLive(live);
     return;
   }
   leave();
 }
 
 function leave(message = ''): void {
-  unsubscribe?.();
-  unsubscribe = null;
+  stopListening();
   current = null;
   saveSeat(null);
   renderJoin(message);
 }
 
-// -- Live view -----------------------------------------------------------------
+// -- Live screen ---------------------------------------------------------------
+
+function createLive(saved: SavedSeat, seat: Seat): Live {
+  const { root, body } = shell('');
+  const ui: LiveUi = {
+    root,
+    subtitle: root.querySelector('.subtitle') as HTMLElement,
+    identity: el('div'),
+    declare: el('div'),
+    phase: el('div'),
+    party: el('div'),
+    notice: el('p', { cls: 'player-error', attrs: { role: 'status' } }),
+    declareKey: null,
+  };
+  const live: Live = { saved, seat, view: null, roster: [], notice: '', declaration: null, draft: loadDraft(), ui };
+  body.append(
+    ui.identity,
+    ui.declare,
+    ui.phase,
+    ui.party,
+    ui.notice,
+    btn('Leave session', 'btn btn-ghost', () => void leaveAndRelease(live)),
+  );
+  return live;
+}
 
 function renderLive(live: Live): void {
-  const { view, seat, saved } = live;
-  const subtitle = view?.inSurprisePhase ? 'Surprise Phase' : view && view.phase !== 'setup' ? `Round ${view.roundNumber}` : `Session ${saved.code}`;
-  const { root, body } = shell(subtitle);
+  if (current !== live) return;
+  const { view, seat, saved, ui } = live;
+
+  ui.subtitle.textContent = view?.inSurprisePhase
+    ? 'Surprise Phase'
+    : view && view.phase !== 'setup'
+      ? `Round ${view.roundNumber}`
+      : `Session ${saved.code}`;
 
   const myId = view?.players.some((p) => p.id === seat.combatantId) ? seat.combatantId : null;
   const me = view?.players.find((p) => p.id === myId);
 
-  if (me) {
-    body.appendChild(el('p', { cls: 'player-you', text: `Playing as ${me.name}` }));
-  } else if (view) {
-    body.appendChild(buildClaimPicker(live, view));
-  }
+  if (me) ui.identity.replaceChildren(el('p', { cls: 'player-you', text: `Playing as ${me.name}` }));
+  else if (view) ui.identity.replaceChildren(buildClaimPicker(live, view));
+  else ui.identity.replaceChildren();
 
+  renderDeclare(live, declareStatus(view, myId, live.declaration));
+  ui.phase.replaceChildren(buildPhase(view, myId));
+  ui.party.replaceChildren(...buildParty(view));
+  ui.notice.textContent = live.notice;
+}
+
+function buildPhase(view: PublicView | null, myId: string | null): HTMLElement {
+  const box = el('div');
   if (!view) {
-    body.appendChild(el('p', { cls: 'empty-hint', text: 'Waiting for the DM...' }));
+    box.appendChild(el('p', { cls: 'empty-hint', text: 'Waiting for the DM...' }));
   } else if (view.phase === 'setup') {
-    body.appendChild(el('p', { cls: 'empty-hint', text: 'The DM is setting up the encounter.' }));
+    box.appendChild(el('p', { cls: 'empty-hint', text: 'The DM is setting up the encounter.' }));
   } else if (view.phase === 'initiative') {
-    body.appendChild(el('p', { cls: 'player-status', text: 'Initiative is being rolled.' }));
+    box.appendChild(el('p', { cls: 'player-status', text: 'Initiative is being rolled.' }));
   } else if (view.phase === 'loot') {
-    body.appendChild(el('p', { cls: 'player-status', text: 'The encounter is over.' }));
+    box.appendChild(el('p', { cls: 'player-status', text: 'The encounter is over.' }));
   } else {
-    body.appendChild(el('div', { cls: 'player-segment', text: `Segment ${view.currentSegment}` }));
+    box.appendChild(el('div', { cls: 'player-segment', text: `Segment ${view.currentSegment}` }));
     const actingMe = myId !== null && view.acting.some((a) => a.id === myId);
-    const box = el('div', { cls: ['player-acting', actingMe ? 'is-me' : ''] });
-    box.appendChild(el('p', { cls: 'callout-label', text: actingMe ? 'Your turn to act' : 'Acting now' }));
+    const acting = el('div', { cls: ['player-acting', actingMe ? 'is-me' : ''] });
+    acting.appendChild(el('p', { cls: 'callout-label', text: actingMe ? 'Your turn to act' : 'Acting now' }));
     if (view.acting.length === 0) {
-      box.appendChild(el('p', { cls: 'empty-hint', text: 'No one acts this segment.' }));
+      acting.appendChild(el('p', { cls: 'empty-hint', text: 'No one acts this segment.' }));
     } else {
-      view.acting.forEach((a) => box.appendChild(el('span', { cls: `callout-name type-${a.type}`, text: a.name })));
+      view.acting.forEach((a) => acting.appendChild(el('span', { cls: `callout-name type-${a.type}`, text: a.name })));
     }
-    body.appendChild(box);
+    box.appendChild(acting);
   }
+  return box;
+}
 
-  if (view && view.players.length > 0) {
-    const party = el('div', { cls: 'player-party' });
-    party.appendChild(el('h3', { text: 'Party' }));
-    view.players.forEach((p) => {
-      const row = el('div', { cls: ['player-party-row', p.isActive ? '' : 'is-down'] });
-      row.appendChild(el('span', { text: p.name }));
-      if (p.isHorsDeCombat) row.appendChild(el('span', { cls: 'chip', text: 'Hors de combat' }));
-      party.appendChild(row);
-    });
-    body.appendChild(party);
-  }
-
-  if (live.notice) body.appendChild(el('p', { cls: 'player-error', text: live.notice }));
-  body.appendChild(btn('Leave session', 'btn btn-ghost', () => void leaveAndRelease(live)));
-  mount(appEl, root);
+function buildParty(view: PublicView | null): HTMLElement[] {
+  if (!view || view.players.length === 0) return [];
+  const party = el('div', { cls: 'player-party' });
+  party.appendChild(el('h3', { text: 'Party' }));
+  view.players.forEach((p) => {
+    const row = el('div', { cls: ['player-party-row', p.isActive ? '' : 'is-down'] });
+    row.appendChild(el('span', { text: p.name }));
+    if (p.isHorsDeCombat) row.appendChild(el('span', { cls: 'chip', text: 'Hors de combat' }));
+    party.appendChild(row);
+  });
+  return [party];
 }
 
 function buildClaimPicker(live: Live, view: PublicView): HTMLElement {
@@ -231,6 +360,115 @@ function buildClaimPicker(live: Live, view: PublicView): HTMLElement {
     free.forEach((p) => box.appendChild(btn(p.name, 'btn btn-secondary', () => void claim(live, p.id))));
   }
   return box;
+}
+
+// -- Declaration ---------------------------------------------------------------
+
+function renderDeclare(live: Live, status: DeclareStatus): void {
+  const key = declareStatusKey(status);
+  if (key === live.ui.declareKey) return;
+  live.ui.declareKey = key;
+
+  switch (status.kind) {
+    case 'form':
+      live.ui.declare.replaceChildren(buildDeclareForm(live));
+      break;
+    case 'blocked':
+      live.ui.declare.replaceChildren(el('p', { cls: 'player-status', text: status.reason }));
+      break;
+    case 'dm-entered':
+      live.ui.declare.replaceChildren(
+        el('p', { cls: 'player-status', text: 'The DM has recorded your roll for this round.' }),
+      );
+      break;
+    case 'declared':
+      live.ui.declare.replaceChildren(buildDeclared(status.declaration));
+      break;
+    default:
+      live.ui.declare.replaceChildren();
+  }
+}
+
+function buildDeclared(d: MyDeclaration): HTMLElement {
+  const box = el('div', { cls: 'player-declared' });
+  box.appendChild(el('p', { cls: 'callout-label', text: `Your action - round ${d.round}` }));
+  const kindName = d.kind === 'spell_casting' ? 'casting time' : 'speed';
+  box.appendChild(el('p', { cls: 'player-declared-action', text: `${d.label || 'Action'} (${kindName} ${d.value})` }));
+  box.appendChild(el('p', { text: `You rolled a ${d.d10} on the d10.` }));
+  box.appendChild(
+    d.total === null
+      ? el('p', { cls: 'empty-hint', text: 'Waiting for the DM to add it up...' })
+      : el('p', { cls: 'player-total', text: `Your initiative: ${d.total}` }),
+  );
+  return box;
+}
+
+function buildDeclareForm(live: Live): HTMLElement {
+  const form = el('div', { cls: 'player-declare' });
+  form.appendChild(el('h3', { text: 'Declare your action' }));
+
+  const kindGroup = el('div', { cls: 'form-group' });
+  kindGroup.appendChild(el('label', { text: 'Type', attrs: { for: 'decl-kind' } }));
+  const kindSelect = el('select', { attrs: { id: 'decl-kind', name: 'decl-kind' } });
+  kindSelect.appendChild(el('option', { text: 'Weapon (speed factor)', attrs: { value: 'weapon_speed' } }));
+  kindSelect.appendChild(el('option', { text: 'Spell (casting time)', attrs: { value: 'spell_casting' } }));
+  kindSelect.value = live.draft.kind;
+  kindGroup.appendChild(kindSelect);
+
+  const labelGroup = labeledInput({ label: 'Action', id: 'decl-label', type: 'text', value: live.draft.label, placeholder: 'e.g. Long sword' });
+  const labelInput = labelGroup.querySelector('input')!;
+  labelInput.maxLength = 40;
+  labelInput.autocomplete = 'off';
+
+  const valueGroup = labeledInput({ label: 'Speed / casting time', id: 'decl-value', type: 'number', value: String(live.draft.value), min: '0', max: '30' });
+  const valueInput = valueGroup.querySelector('input')!;
+  valueInput.inputMode = 'numeric';
+
+  const error = el('p', { cls: 'player-error', attrs: { role: 'alert' } });
+  const rollBtn = btn('Roll d10 and lock in', 'btn btn-primary btn-start', () => void submit());
+
+  const readInput = (): DeclarationInput | null => {
+    const value = Number.parseInt(valueInput.value, 10);
+    if (!Number.isInteger(value) || value < 0 || value > 30) return null;
+    return { kind: kindSelect.value === 'spell_casting' ? 'spell_casting' : 'weapon_speed', label: labelInput.value.trim(), value };
+  };
+
+  // Keep what has been typed so a screen refresh or reload never costs the player their entry.
+  const rememberDraft = (): void => {
+    const input = readInput();
+    if (input) {
+      live.draft = input;
+      saveDraft(input);
+    }
+  };
+  [kindSelect, labelInput, valueInput].forEach((control) => control.addEventListener('change', rememberDraft));
+
+  async function submit(): Promise<void> {
+    const input = readInput();
+    if (!input) {
+      error.textContent = 'Enter a speed between 0 and 30.';
+      return;
+    }
+    live.draft = input;
+    saveDraft(input);
+    error.textContent = '';
+    rollBtn.disabled = true;
+    rollBtn.textContent = 'Rolling...';
+    try {
+      const res = await submitDeclaration(live.seat.sessionId, input);
+      live.declaration = { ...input, encounterId: res.encounterId, round: res.round, d10: res.d10, total: null };
+    } catch (err) {
+      const message = errorText(err);
+      error.textContent = declareErrorMessage(message);
+      rollBtn.disabled = false;
+      rollBtn.textContent = 'Roll d10 and lock in';
+      if (message.includes('already declared')) await refreshDeclaration(live);
+    }
+    renderLive(live);
+  }
+
+  form.append(kindGroup, labelGroup, valueGroup, rollBtn, error);
+  return form;
 }
 
 // -- Boot ----------------------------------------------------------------------

@@ -205,6 +205,97 @@ export async function fetchRoster(sessionId: string): Promise<RosterEntry[]> {
   }));
 }
 
+// -- Player declarations -------------------------------------------------------
+
+export interface DeclarationInput {
+  kind: 'weapon_speed' | 'spell_casting';
+  label: string;
+  value: number;
+}
+
+/** A player's own declaration for one round. `total` stays null until the DM has applied it. */
+export interface MyDeclaration extends DeclarationInput {
+  encounterId: string;
+  round: number;
+  d10: number;
+  total: number | null;
+}
+
+/** Declare an action for the current round. The d10 is rolled by the server and returned. */
+export async function submitDeclaration(
+  sessionId: string,
+  input: DeclarationInput,
+): Promise<{ encounterId: string; round: number; d10: number }> {
+  const { data, error } = await getClient().rpc('submit_declaration', {
+    p_session_id: sessionId,
+    p_kind: input.kind,
+    p_label: input.label,
+    p_value: input.value,
+  });
+  if (error) throw error;
+  return data as { encounterId: string; round: number; d10: number };
+}
+
+export async function fetchMyDeclaration(
+  sessionId: string,
+  encounterId: string,
+  round: number,
+  combatantId: string,
+): Promise<MyDeclaration | null> {
+  const { data, error } = await getClient()
+    .from('declarations')
+    .select('encounter_id, round, kind, label, value, d10, total')
+    .eq('session_id', sessionId)
+    .eq('encounter_id', encounterId)
+    .eq('round', round)
+    .eq('combatant_id', combatantId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const row = data as {
+    encounter_id: string;
+    round: number;
+    kind: DeclarationInput['kind'];
+    label: string;
+    value: number;
+    d10: number;
+    total: number | null;
+  };
+  return {
+    encounterId: row.encounter_id,
+    round: row.round,
+    kind: row.kind,
+    label: row.label,
+    value: row.value,
+    d10: row.d10,
+    total: row.total,
+  };
+}
+
+/**
+ * Calls `onChange` whenever a declaration visible to this player is written (RLS limits that to their
+ * own), which is how the DM's computed total reaches them. Returns an unsubscribe function.
+ */
+export function subscribeToMyDeclarations(sessionId: string, onChange: () => void): () => void {
+  const supabase = getClient();
+  let active = true;
+  const channel = supabase
+    .channel(`declarations-${sessionId}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'declarations', filter: `session_id=eq.${sessionId}` },
+      () => { if (active) onChange(); },
+    )
+    .subscribe((status) => {
+      // Anything written before the channel was live was missed, so read once more now.
+      if (status === 'SUBSCRIBED' && active) onChange();
+    });
+  return () => {
+    active = false;
+    void supabase.removeChannel(channel);
+  };
+}
+
 type RawView = Partial<PublicView> & { closed?: boolean };
 
 /**
