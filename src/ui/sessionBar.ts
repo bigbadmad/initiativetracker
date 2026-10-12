@@ -10,8 +10,10 @@ import {
   type PublishStatus,
 } from '../sync/session.ts';
 import { queueTotals, resetTotals, startDeclarationPolling, type DeclarationTarget } from '../sync/declarations.ts';
+import { createAutoLocker } from '../sync/autoLock.ts';
 import { applyDeclarations, getState, lockInitiative } from '../state.ts';
 import { el, btn, iconBtn } from './components.ts';
+import { dmIsMidEdit } from './editing.ts';
 
 const AUTOLOCK_KEY = 'adnd-tracker-autolock';
 
@@ -45,6 +47,14 @@ function declarationTarget(): DeclarationTarget | null {
   return phase === 'initiative' && encounterId ? { encounterId, round: roundNumber } : null;
 }
 
+const autoLocker = createAutoLocker({
+  isMidEdit: dmIsMidEdit,
+  getTarget: declarationTarget,
+  lock: () => {
+    if (autoLock) lockInitiative();
+  },
+});
+
 function beginPolling(): void {
   stopPolling?.();
   stopPolling = startDeclarationPolling({
@@ -53,7 +63,7 @@ function beginPolling(): void {
     onDeclarations: (target, declarations) => {
       const applied = applyDeclarations(target.encounterId, target.round, declarations);
       // Only a remote declaration triggers this, so the DM typing in the last roll by hand is never overridden.
-      if (applied.length > 0 && autoLock) lockInitiative();
+      if (applied.length > 0 && autoLock) autoLocker.request(target);
     },
   });
 }
@@ -61,6 +71,7 @@ function beginPolling(): void {
 function endPolling(): void {
   stopPolling?.();
   stopPolling = null;
+  autoLocker.cancel();
   resetTotals();
 }
 

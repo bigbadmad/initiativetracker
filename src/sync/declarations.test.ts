@@ -203,6 +203,62 @@ describe('totals write-back', () => {
     expect(callsTo('set_declaration_totals')).toHaveLength(2);
   });
 
+  it('is single-flight: a newer snapshot waits for the write in flight, and only the latest is sent after it', async () => {
+    const resolvers: Array<(v: unknown) => void> = [];
+    rpc.mockImplementation(() => new Promise((r) => resolvers.push(r)));
+
+    mod.queueTotals(dm, target, { p1: 1 });
+    await vi.advanceTimersByTimeAsync(400);
+    expect(callsTo('set_declaration_totals')).toHaveLength(1);
+
+    // Two newer snapshots arrive while the first is still on the wire.
+    mod.queueTotals(dm, target, { p1: 2 });
+    await vi.advanceTimersByTimeAsync(400);
+    mod.queueTotals(dm, target, { p1: 3 });
+    await vi.advanceTimersByTimeAsync(400);
+    expect(callsTo('set_declaration_totals')).toHaveLength(1);
+
+    resolvers[0]({ data: null, error: null });
+    await vi.advanceTimersByTimeAsync(0);
+    const calls = callsTo('set_declaration_totals');
+    expect(calls).toHaveLength(2);
+    expect((calls[1][1] as { p_totals: unknown }).p_totals).toEqual({ p1: 3 });
+  });
+
+  it('keeps the server\'s snapshot as the last one sent, so a revert is not mistaken for a duplicate', async () => {
+    rpc.mockResolvedValue({ data: null, error: null });
+    mod.queueTotals(dm, target, { p1: 5 });
+    await vi.advanceTimersByTimeAsync(400);
+    mod.queueTotals(dm, target, { p1: 6 });
+    await vi.advanceTimersByTimeAsync(400);
+    mod.queueTotals(dm, target, { p1: 5 }); // back to the first value: the server now holds 6, so this must be sent
+    await vi.advanceTimersByTimeAsync(400);
+    const sent = callsTo('set_declaration_totals').map((c) => (c[1] as { p_totals: { p1: number } }).p_totals.p1);
+    expect(sent).toEqual([5, 6, 5]);
+  });
+
+  it('skips a queued snapshot that matches the write that just landed', async () => {
+    const resolvers: Array<(v: unknown) => void> = [];
+    rpc.mockImplementation(() => new Promise((r) => resolvers.push(r)));
+    mod.queueTotals(dm, target, { p1: 1 });
+    await vi.advanceTimersByTimeAsync(400);
+    mod.queueTotals(dm, target, { p1: 1 });
+    await vi.advanceTimersByTimeAsync(400);
+    resolvers[0]({ data: null, error: null });
+    await vi.advanceTimersByTimeAsync(400);
+    expect(callsTo('set_declaration_totals')).toHaveLength(1);
+  });
+
+  it('keeps writing after a failed write', async () => {
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'Failed to fetch' } });
+    rpc.mockResolvedValue({ data: null, error: null });
+    mod.queueTotals(dm, target, { p1: 1 });
+    await vi.advanceTimersByTimeAsync(400);
+    mod.queueTotals(dm, target, { p1: 2 });
+    await vi.advanceTimersByTimeAsync(400);
+    expect(callsTo('set_declaration_totals')).toHaveLength(2);
+  });
+
   it('forgets what it sent when reset, so a new session starts clean', async () => {
     rpc.mockResolvedValue({ data: null, error: null });
     mod.queueTotals(dm, target, { p1: 5 });

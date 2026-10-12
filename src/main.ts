@@ -6,6 +6,7 @@ import { renderTracker } from './ui/tracker.ts';
 import { renderLoot } from './ui/loot.ts';
 import { mount } from './ui/components.ts';
 import { mountSessionBar, publishCurrent } from './ui/sessionBar.ts';
+import { dmIsMidEdit } from './ui/editing.ts';
 import { maxInitiativeSegment, nextActiveSegment } from './combat.ts';
 
 const appEl = document.getElementById('app')!;
@@ -34,16 +35,6 @@ function renderApp(): void {
 
 const RENDER_RETRY_MS = 400;
 let renderRetry: ReturnType<typeof setTimeout> | null = null;
-
-/** True while the DM is typing in a field or has a button held down, when a re-render would eat their input or click. */
-function dmIsMidEdit(): boolean {
-  const active = document.activeElement;
-  const typing =
-    active !== null &&
-    appEl.contains(active) &&
-    (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT');
-  return typing || appEl.querySelector(':active') !== null;
-}
 
 /**
  * Changes made by the DM render immediately, as before. A change that arrived over the network

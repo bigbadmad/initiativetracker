@@ -74,7 +74,7 @@ export function renderInitiative(): HTMLElement {
   // Lock in and sort
   const lockBtn = iconBtn('fa-solid fa-swords', 'Lock In & Begin Combat', 'btn btn-primary', () => {
     const result = lockInitiative();
-    if (!result.ok) alert(`Missing d10 roll for: ${result.missing.join(', ')}`);
+    if (!result.ok && result.reason === 'missing') alert(`Missing d10 roll for: ${result.missing.join(', ')}`);
   });
   bar.appendChild(lockBtn);
 

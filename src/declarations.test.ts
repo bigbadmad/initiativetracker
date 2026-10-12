@@ -217,8 +217,18 @@ describe('lockInitiative', () => {
     addCombatant(combatant({ id: 'p2', name: 'Elf' }));
     beginInitiativePhase();
     const result = lockInitiative();
-    expect(result).toEqual({ ok: false, missing: ['Elf'] });
+    expect(result).toEqual({ ok: false, reason: 'missing', missing: ['Elf'] });
     expect(getState().phase).toBe('initiative');
+  });
+
+  it('does nothing outside the initiative phase, so a late call cannot reset a combat in progress', () => {
+    addCombatant(combatant({ id: 'p1', d10Roll: 6, totalInitiative: 6 }));
+    addCombatant(combatant({ id: 'p2', name: 'Elf', d10Roll: 2, totalInitiative: 2 }));
+    beginInitiativePhase();
+    expect(lockInitiative().ok).toBe(true);
+    setState({ currentSegment: 6 });
+    expect(lockInitiative()).toEqual({ ok: false, reason: 'phase' });
+    expect(getState().currentSegment).toBe(6);
   });
 
   it('starts combat on the first live segment once everyone has rolled', () => {

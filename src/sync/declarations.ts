@@ -96,13 +96,29 @@ export function startDeclarationPolling(opts: PollOptions): () => void {
 
 // -- Totals write-back ---------------------------------------------------------
 
+interface TotalsJob {
+  session: DmSession;
+  target: DeclarationTarget;
+  totals: Record<string, number>;
+  key: string;
+}
+
 let totalsTimer: ReturnType<typeof setTimeout> | null = null;
+/** The newest snapshot not yet sent. A newer one simply replaces it; only the latest ever matters. */
+let queued: TotalsJob | null = null;
+let inFlight = false;
+/** The key of the snapshot the server last accepted, used to skip resending an identical one. */
 let lastTotalsKey = '';
+/** Bumped by resetTotals so a write that finishes after the session ended records nothing. */
+let generation = 0;
 
 /**
- * Tell the server each remote player's computed initiative so they can see it. Debounced, and a
- * payload identical to the last one that landed is not re-sent. Failures are logged and retried by
- * the next state change; a player simply sees their total a little later.
+ * Tell the server each remote player's computed initiative so they can see it.
+ *
+ * Writes are single-flight: the next one is only sent once the previous has returned, so two
+ * snapshots can never reach the server out of order and an older one can never overwrite a newer.
+ * Bursts are debounced, and a snapshot identical to the one the server last accepted is not
+ * re-sent. A failed write is logged and superseded by the next state change.
  */
 export function queueTotals(
   session: DmSession,
@@ -111,22 +127,38 @@ export function queueTotals(
 ): void {
   const sorted = Object.keys(totals).sort().map((k) => [k, totals[k]]);
   const key = JSON.stringify([session.code, target.encounterId, target.round, sorted]);
-  if (key === lastTotalsKey) return;
+  if (key === lastTotalsKey && !inFlight && !queued) return;
+  queued = { session, target, totals, key };
   if (totalsTimer) clearTimeout(totalsTimer);
-  totalsTimer = setTimeout(async () => {
+  totalsTimer = setTimeout(() => {
     totalsTimer = null;
-    try {
-      await pushTotals(session, target, totals);
-      lastTotalsKey = key;
-    } catch (err) {
-      console.error('set_declaration_totals failed', err);
-    }
+    sendQueued();
   }, TOTALS_DEBOUNCE_MS);
+}
+
+function sendQueued(): void {
+  if (inFlight || !queued) return;
+  const job = queued;
+  queued = null;
+  if (job.key === lastTotalsKey) return; // the write that just landed already says this
+  inFlight = true;
+  const gen = generation;
+  pushTotals(job.session, job.target, job.totals)
+    .then(() => {
+      if (gen === generation) lastTotalsKey = job.key;
+    })
+    .catch((err) => console.error('set_declaration_totals failed', err))
+    .finally(() => {
+      inFlight = false;
+      sendQueued();
+    });
 }
 
 /** Forget what was sent, e.g. when the session ends, so a new session starts from scratch. */
 export function resetTotals(): void {
   if (totalsTimer) clearTimeout(totalsTimer);
   totalsTimer = null;
+  queued = null;
   lastTotalsKey = '';
+  generation++;
 }

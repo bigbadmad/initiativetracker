@@ -246,17 +246,22 @@ export function beginInitiativePhase(): void {
   notify();
 }
 
-export type LockResult = { ok: true } | { ok: false; missing: string[] };
+export type LockResult =
+  | { ok: true }
+  | { ok: false; reason: 'phase' }
+  | { ok: false; reason: 'missing'; missing: string[] };
 
 /**
- * Close the initiative phase and begin combat. Refuses (and changes nothing) while anyone who can
- * act this round still has no roll. Combatants who sit the round out get the 99 sentinel.
+ * Close the initiative phase and begin combat. Refuses (and changes nothing) outside the
+ * initiative phase - a late call must never reset a combat already under way - or while anyone who
+ * can act this round still has no roll. Combatants who sit the round out get the 99 sentinel.
  */
 export function lockInitiative(): LockResult {
+  if (state.phase !== 'initiative') return { ok: false, reason: 'phase' };
   const missing = state.combatants.filter(
     (c) => canActThisRound(c, state.inSurprisePhase) && c.d10Roll === null,
   );
-  if (missing.length > 0) return { ok: false, missing: missing.map((c) => c.name) };
+  if (missing.length > 0) return { ok: false, reason: 'missing', missing: missing.map((c) => c.name) };
 
   const combatants = state.combatants.map((c) =>
     c.isActive && (c.isHorsDeCombat || (c.isSurprised && state.inSurprisePhase))
