@@ -1,6 +1,6 @@
 import type { RemoteDeclaration } from '../state.ts';
 import type { DmSession } from './session.ts';
-import { isPermanentPublishError } from './session.ts';
+import { startPoller } from './poller.ts';
 import { getClient } from './supabase.ts';
 
 const POLL_INTERVAL_MS = 2500;
@@ -53,45 +53,18 @@ export interface PollOptions {
 }
 
 /**
- * Poll for declarations while the DM is collecting them. Polling (rather than a realtime channel)
- * keeps the DM client free of any Supabase auth identity - it is authorised by its secret alone.
- * Requests never overlap, and a closed or unknown session stops the loop for good.
+ * Poll for declarations while the DM is collecting them (see `startPoller` for why this polls).
  * Returns a stop function.
  */
 export function startDeclarationPolling(opts: PollOptions): () => void {
-  const interval = opts.intervalMs ?? POLL_INTERVAL_MS;
-  let stopped = false;
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  let lastError = '';
-
-  const tick = async (): Promise<void> => {
-    if (stopped) return;
-    const session = opts.getSession();
-    const target = opts.getTarget();
-    if (session && target) {
-      try {
-        const declarations = await fetchDeclarations(session, target);
-        lastError = '';
-        if (!stopped) opts.onDeclarations(target, declarations);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String((err as { message?: string })?.message ?? err);
-        if (isPermanentPublishError(message)) {
-          stopped = true;
-          return;
-        }
-        if (message !== lastError) console.error('get_declarations failed', err);
-        lastError = message;
-      }
-    }
-    if (!stopped) timer = setTimeout(() => void tick(), interval);
-  };
-
-  timer = setTimeout(() => void tick(), interval);
-  return () => {
-    stopped = true;
-    if (timer) clearTimeout(timer);
-    timer = null;
-  };
+  return startPoller<DeclarationTarget, RemoteDeclaration[]>({
+    getSession: opts.getSession,
+    getTarget: opts.getTarget,
+    fetch: fetchDeclarations,
+    onResult: opts.onDeclarations,
+    intervalMs: opts.intervalMs ?? POLL_INTERVAL_MS,
+    label: 'get_declarations',
+  });
 }
 
 // -- Totals write-back ---------------------------------------------------------

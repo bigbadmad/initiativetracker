@@ -1,10 +1,12 @@
 import type { AppPhase, AppState } from '../types.ts';
-import { getCombatantsAtSegment } from '../combat.ts';
+import { getCombatantsAtSegment, segmentDoneFor } from '../combat.ts';
 
 export interface PublicActor {
   id: string;
   name: string;
   type: 'player' | 'monster';
+  /** The player has tapped Done for this segment. Always false for monsters. */
+  done: boolean;
 }
 
 export interface PublicPlayer {
@@ -45,6 +47,7 @@ export function toPlayerTotals(state: Readonly<AppState>): Record<string, number
 }
 
 export function toPublicView(state: Readonly<AppState>): PublicView {
+  const marks = segmentDoneFor(state);
   const acting =
     state.phase === 'combat'
       ? getCombatantsAtSegment(state.combatants, state.currentSegment, state.inSurprisePhase).map(
@@ -52,6 +55,7 @@ export function toPublicView(state: Readonly<AppState>): PublicView {
             id: c.id,
             name: c.name,
             type: c.type === 'player' ? 'player' : 'monster',
+            done: c.type === 'player' && marks !== null && marks.done.includes(c.id),
           }),
         )
       : [];

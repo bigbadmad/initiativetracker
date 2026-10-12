@@ -1507,3 +1507,13 @@ details[open] .encounter-generator-summary::before { transform: rotate(90deg); }
 .player-declared-action { color: var(--text-bright); font-weight: bold; }
 .player-total { color: var(--amber-light); font-size: 1.3rem; font-weight: bold; }
 .player-error:empty { display: none; }
+
+/* -- Segment Done ------------------------------------------------------------- */
+.chip-done { border-color: var(--green-light); color: var(--green-light); }
+.chip-waiting { color: var(--text-muted); }
+.callout-done-summary { margin: 0 0 6px; font-size: 0.85rem; color: var(--text-muted); }
+.callout-done-summary.is-ready { color: var(--green-light); font-weight: bold; }
+.btn-advance.is-ready { box-shadow: 0 0 0 2px var(--green-light); }
+.player-act { display: flex; flex-direction: column; gap: 8px; }
+.btn-done { min-height: 56px; font-size: 1.2rem; }
+.player-done { color: var(--green-light); padding: 8px 0; }
