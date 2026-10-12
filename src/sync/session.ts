@@ -205,6 +205,22 @@ export async function fetchRoster(sessionId: string): Promise<RosterEntry[]> {
   }));
 }
 
+// -- Player: segment Done --------------------------------------------------------
+
+/** The segment a Done tap was recorded for. */
+export interface DoneReceipt {
+  encounterId: string;
+  round: number;
+  segment: number;
+}
+
+/** Tell the DM this character has finished acting. Idempotent; only valid while the character acts. */
+export async function markSegmentDone(sessionId: string): Promise<DoneReceipt> {
+  const { data, error } = await getClient().rpc('mark_done', { p_session_id: sessionId });
+  if (error) throw error;
+  return data as DoneReceipt;
+}
+
 // -- Player declarations -------------------------------------------------------
 
 export interface DeclarationInput {

@@ -1,4 +1,4 @@
-﻿import type { Combatant, Modifier } from './types.ts';
+﻿import type { AppState, Combatant, Modifier, SegmentDone } from './types.ts';
 
 // -- Initiative calculation ----------------------------------------------------
 
@@ -135,6 +135,37 @@ export function firstActiveSegment(
     }
   }
   return 1;
+}
+
+/**
+ * The remote Done taps for the segment on screen, or null when there are none for it. Taps recorded
+ * for another encounter, round or segment are stale and are ignored.
+ */
+export function segmentDoneFor(
+  state: Pick<AppState, 'phase' | 'encounterId' | 'roundNumber' | 'currentSegment' | 'segmentDone'>,
+): SegmentDone | null {
+  const s = state.segmentDone;
+  if (!s || state.phase !== 'combat') return null;
+  if (s.encounterId !== state.encounterId || s.round !== state.roundNumber || s.segment !== state.currentSegment) {
+    return null;
+  }
+  return s;
+}
+
+/**
+ * Whether the DM can treat the segment as handed back by the table: at least one acting player has
+ * a seat, and every such player has tapped Done. Players without a seat (dice at the table) are not
+ * waited on, and an unseated acting player never makes this false.
+ */
+export function remotePlayersAllDone(
+  acting: Combatant[],
+  marks: Pick<SegmentDone, 'done' | 'remote'> | null,
+): { waitingOn: Combatant[]; done: Combatant[]; ready: boolean } {
+  if (!marks) return { waitingOn: [], done: [], ready: false };
+  const seated = acting.filter((c) => c.type === 'player' && marks.remote.includes(c.id));
+  const done = seated.filter((c) => marks.done.includes(c.id));
+  const waitingOn = seated.filter((c) => !marks.done.includes(c.id));
+  return { waitingOn, done, ready: seated.length > 0 && waitingOn.length === 0 };
 }
 
 /**

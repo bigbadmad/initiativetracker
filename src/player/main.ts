@@ -7,16 +7,19 @@ import {
   fetchRoster,
   joinSession,
   leaveSession,
+  markSegmentDone,
   submitDeclaration,
   subscribeToMyDeclarations,
   subscribeToView,
   type DeclarationInput,
+  type DoneReceipt,
   type MyDeclaration,
   type RosterEntry,
   type Seat,
 } from '../sync/session.ts';
 import { el, btn, labeledInput, mount, faIcon } from '../ui/components.ts';
 import { declareErrorMessage, declareStatus, declareStatusKey, type DeclareStatus } from './declare.ts';
+import { actStatus, actStatusKey, doneErrorMessage, type ActStatus } from './act.ts';
 
 const appEl = document.getElementById('app')!;
 const SAVED_KEY = 'adnd-tracker-player';
@@ -38,6 +41,9 @@ interface LiveUi {
   notice: HTMLElement;
   /** Identifies what the declare region currently shows; it is only rebuilt when this changes. */
   declareKey: string | null;
+  /** The Done button area. Kept apart from `phase` so a DM update never rebuilds a button mid-tap. */
+  act: HTMLElement;
+  actKey: string | null;
 }
 
 /** Everything the live screen renders from. */
@@ -50,6 +56,8 @@ interface Live {
   declaration: MyDeclaration | null;
   /** The action last typed or submitted; pre-fills the form and survives reloads. */
   draft: DeclarationInput;
+  /** This device's own Done tap, so the button flips at once rather than after the DM's next publish. */
+  tapped: DoneReceipt | null;
   ui: LiveUi;
 }
 
@@ -272,12 +280,15 @@ function createLive(saved: SavedSeat, seat: Seat): Live {
     party: el('div'),
     notice: el('p', { cls: 'player-error', attrs: { role: 'status' } }),
     declareKey: null,
+    act: el('div'),
+    actKey: null,
   };
-  const live: Live = { saved, seat, view: null, roster: [], notice: '', declaration: null, draft: loadDraft(), ui };
+  const live: Live = { saved, seat, view: null, roster: [], notice: '', declaration: null, draft: loadDraft(), tapped: null, ui };
   body.append(
     ui.identity,
     ui.declare,
     ui.phase,
+    ui.act,
     ui.party,
     ui.notice,
     btn('Leave session', 'btn btn-ghost', () => void leaveAndRelease(live)),
@@ -304,6 +315,7 @@ function renderLive(live: Live): void {
 
   renderDeclare(live, declareStatus(view, myId, live.declaration));
   ui.phase.replaceChildren(buildPhase(view, myId));
+  renderAct(live, actStatus(view, myId, live.tapped));
   ui.party.replaceChildren(...buildParty(view));
   ui.notice.textContent = live.notice;
 }
@@ -326,7 +338,10 @@ function buildPhase(view: PublicView | null, myId: string | null): HTMLElement {
     if (view.acting.length === 0) {
       acting.appendChild(el('p', { cls: 'empty-hint', text: 'No one acts this segment.' }));
     } else {
-      view.acting.forEach((a) => acting.appendChild(el('span', { cls: `callout-name type-${a.type}`, text: a.name })));
+      view.acting.forEach((a) => {
+        acting.appendChild(el('span', { cls: `callout-name type-${a.type}`, text: a.name }));
+        if (a.done) acting.appendChild(el('span', { cls: 'chip chip-done', text: 'Done' }));
+      });
     }
     box.appendChild(acting);
   }
@@ -360,6 +375,52 @@ function buildClaimPicker(live: Live, view: PublicView): HTMLElement {
     free.forEach((p) => box.appendChild(btn(p.name, 'btn btn-secondary', () => void claim(live, p.id))));
   }
   return box;
+}
+
+// -- Segment Done --------------------------------------------------------------
+
+function renderAct(live: Live, status: ActStatus): void {
+  const key = actStatusKey(live.view, status);
+  if (key === live.ui.actKey) return;
+  live.ui.actKey = key;
+
+  switch (status.kind) {
+    case 'act':
+      live.ui.act.replaceChildren(buildDoneButton(live));
+      break;
+    case 'done':
+      live.ui.act.replaceChildren(
+        el('p', { cls: 'player-status player-done', text: 'Done - waiting for the DM to move on.' }),
+      );
+      break;
+    default:
+      live.ui.act.replaceChildren();
+  }
+}
+
+function buildDoneButton(live: Live): HTMLElement {
+  const wrap = el('div', { cls: 'player-act' });
+  const error = el('p', { cls: 'player-error', attrs: { role: 'alert' } });
+  let sending = false;
+  const doneBtn = btn('Done', 'btn btn-primary btn-start btn-done', () => void send());
+
+  async function send(): Promise<void> {
+    if (sending) return;
+    sending = true;
+    doneBtn.disabled = true;
+    error.textContent = '';
+    try {
+      live.tapped = await markSegmentDone(live.seat.sessionId);
+    } catch (err) {
+      error.textContent = doneErrorMessage(errorText(err));
+      doneBtn.disabled = false;
+    }
+    sending = false;
+    renderLive(live);
+  }
+
+  wrap.append(doneBtn, error);
+  return wrap;
 }
 
 // -- Declaration ---------------------------------------------------------------

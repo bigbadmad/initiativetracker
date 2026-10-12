@@ -275,6 +275,47 @@ export function lockInitiative(): LockResult {
   return { ok: true };
 }
 
+/** The segment a batch of Done taps was fetched for. */
+export interface SegmentDoneTarget {
+  encounterId: string;
+  round: number;
+  segment: number;
+}
+
+/**
+ * Record which acting players have tapped Done. A batch for a segment the DM has already left is
+ * ignored, and an unchanged batch does nothing (so a poll that finds no news never re-renders).
+ * Returns whether the state changed.
+ */
+export function applySegmentDone(
+  target: SegmentDoneTarget,
+  result: { done: string[]; remote: string[] },
+): boolean {
+  if (
+    state.phase !== 'combat' ||
+    state.encounterId !== target.encounterId ||
+    state.roundNumber !== target.round ||
+    state.currentSegment !== target.segment
+  ) {
+    return false;
+  }
+  const done = [...new Set(result.done)].sort();
+  const remote = [...new Set(result.remote)].sort();
+  const prev = state.segmentDone;
+  const same =
+    prev !== undefined &&
+    prev.encounterId === target.encounterId &&
+    prev.round === target.round &&
+    prev.segment === target.segment &&
+    prev.done.join('|') === done.join('|') &&
+    prev.remote.join('|') === remote.join('|');
+  if (same) return false;
+
+  state = { ...state, segmentDone: { ...target, done, remote } };
+  notify({ remote: true });
+  return true;
+}
+
 /** A player's declaration as returned by the server: the action they chose and the d10 it rolled. */
 export interface RemoteDeclaration {
   combatantId: string;

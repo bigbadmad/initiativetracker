@@ -36,11 +36,14 @@ src/
 │   ├── supabase.ts      # Client init from VITE_SUPABASE_*; `syncAvailable` is false without env vars
 │   ├── publicView.ts    # toPublicView(state) — the ONLY data players may see; toPlayerTotals(state)
 │   ├── session.ts       # DM: create/close/publish (revisioned, retried). Player: join/leave/claim/declare/subscribe
+│   ├── poller.ts        # Shared DM poll loop (no overlap, error de-dup, stops on closed session)
 │   ├── declarations.ts  # DM: poll declarations, single-flight totals write-back
+│   ├── segmentDone.ts   # DM: poll who has tapped Done for the segment on screen
 │   └── autoLock.ts      # Deferred auto-lock (waits until the DM is not mid-edit)
 ├── player/
-│   ├── main.ts          # Player app: join → claim character → declare → follow segments
-│   └── declare.ts       # Pure: what the declare panel shows (unit tested)
+│   ├── main.ts          # Player app: join → claim character → declare → follow segments → Done
+│   ├── declare.ts       # Pure: what the declare panel shows (unit tested)
+│   └── act.ts           # Pure: whether to show the Done button (unit tested)
 └── ui/
     ├── components.ts    # el(), btn(), iconBtn(), faIcon(), chip(), uid()…
     ├── library.ts       # openMonsterLibrary(onSelect) — modal, appends to body
@@ -80,6 +83,7 @@ All app state in one singleton. Key exports:
 | `beginInitiativePhase()` | Auto-roll monsters; detect surprise → roundNumber=0; assigns a new `encounterId` |
 | `lockInitiative()` | Initiative → combat. Refuses (changes nothing) outside the initiative phase or while a roll is missing; returns `{ok}` / `{reason}` |
 | `applyDeclarations(enc, round, decls)` | Merge remote declarations into the matching round; never overwrites a roll the DM already has; returns applied ids |
+| `applySegmentDone(target, result)` | Record which acting players tapped Done; ignores a batch for a segment already left; no-op (no render) if unchanged |
 | `startNewRound()` | Preserve `prevInitiative`; clear rolls; bump round; auto-roll monsters |
 | `continueLoot()` | Clear loot; reset players; → setup |
 | `resetEncounter()` | Full blank-slate reset |
@@ -152,6 +156,9 @@ Lower total acts first. Ties = simultaneous. Surprised combatants get sentinel 9
 3. DM polls `get_declarations` (~2.5s), `applyDeclarations()` merges them, totals go back via `set_declaration_totals` so each player can read only their own.
 4. When the last remote declaration lands and Auto-lock is on, `lockInitiative()` runs once the DM is not mid-edit.
 5. Combat: DM stepping segments republishes the view; players see segment and who acts.
+6. An acting player taps **Done** (`mark_done`). The DM polls `get_segment_done` (~1.5s), `applySegmentDone()` stores it, and the public view carries `done` on each acting player. The tracker shows Done/Waiting chips and highlights Next once every *seated* acting player is done.
+
+**Done is information, never a gate.** Next is never disabled, so an absent player cannot stall the table. `AppState.segmentDone` names the `(encounter, round, segment)` it belongs to and lapses by itself when combat moves on, so nothing resets it. "Seated" means a player has claimed that character; players with dice at the table are not waited on.
 
 ### Database objects
 | Object | Purpose |
@@ -160,8 +167,9 @@ Lower total acts first. Ties = simultaneous. Surprised combatants get sentinel 9
 | `session_views` | The published public view + `revision`. Members read; players subscribe via Realtime |
 | `players` | Seat per anonymous user, `combatant_id` claim. Members read `id, session_id, name, combatant_id` only (never `auth_uid`) |
 | `declarations` | Remote declarations + DM-written `total`. Players read own rows only |
-| DM RPCs (secret-gated) | `create_session`, `publish_view`, `close_session`, `get_declarations`, `set_declaration_totals` |
-| Player RPCs | `join_session`, `leave_session`, `claim_combatant`, `submit_declaration` |
+| `segment_done` | Done taps per `(encounter, round, segment, combatant)`. Unreadable by clients; the DM reads it via RPC and republishes `done` in the view |
+| DM RPCs (secret-gated) | `create_session`, `publish_view`, `close_session`, `get_declarations`, `set_declaration_totals`, `get_segment_done` |
+| Player RPCs | `join_session`, `leave_session`, `claim_combatant`, `submit_declaration`, `mark_done` |
 
 ### Changing the database
 - **Migrations are applied by hand** in the Supabase SQL editor and are immutable once run. Never edit an applied file; add the next number. `create or replace` is fine for an unchanged signature; `drop function` first when the signature changes (and say so at the top of the file, because the deployed client must match).
@@ -177,7 +185,7 @@ Lower total acts first. Ties = simultaneous. Surprised combatants get sentinel 9
 
 ### Testing
 - **Unit tests** (`npm test`) mock the Supabase client and use fake timers. Module-level sync state means tests `vi.resetModules()` and re-import.
-- **Live smoke test**: `supabase/smoke/declarations.cjs` runs against the real project from `.env.local`. It leaves closed test sessions behind, and uses two anonymous sign-ins (Supabase rate-limits those per IP, so don't loop it).
+- **Live smoke tests**: `supabase/smoke/declarations.cjs` (migrations 0005–0006) and `supabase/smoke/segment-done.cjs` (0007) run against the real project from `.env.local`. Each leaves one closed test session behind and uses two anonymous sign-ins (Supabase rate-limits those per IP, so don't loop them). Run the matching one after applying a migration, before deploying.
 - **Realtime**: `SUBSCRIBED` fires before the server-side subscription is live. Tests must wait several seconds after it, and clients re-read once on `SUBSCRIBED` to close the gap (see `subscribeToView`, `subscribeToMyDeclarations`).
 - `supabase/maintenance/cleanup_sessions.sql` removes old test sessions; run it in the SQL editor.
 
@@ -186,6 +194,8 @@ Lower total acts first. Ties = simultaneous. Surprised combatants get sentinel 9
 - The player screen updates persistent regions in place. Never rebuild the declare form on every view update; `declareStatusKey()` decides when it may change.
 - `lockInitiative()` is guarded to the initiative phase. A deferred call must never be able to reset a combat in progress.
 - Claiming a character is trust-based: a player can switch characters via the claim picker.
+- Done taps persist per segment on the server. After "Re-enter Initiative" and a second lock, a player who already tapped Done for a segment shows as done on reaching it again. It is only a hint, and nothing resets it.
+- A player who closes the tab without pressing Leave keeps their seat, so the DM keeps "waiting" on them for Done until they leave or the DM presses Next.
 
 ## UI Conventions
 

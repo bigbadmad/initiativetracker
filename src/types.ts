@@ -121,6 +121,22 @@ export interface SessionLoot {
   xp: number;
 }
 
+// -- Remote "Done" taps ----------------------------------------------------------
+
+/**
+ * Which acting players have tapped Done for one segment. It names the (encounter, round, segment)
+ * it belongs to, so it is simply ignored once combat moves on and never needs resetting.
+ */
+export interface SegmentDone {
+  encounterId: string;
+  round: number;
+  segment: number;
+  /** Combatant ids that have tapped Done. */
+  done: string[];
+  /** Combatant ids that have a player seated on them, i.e. whose Done the DM can expect. */
+  remote: string[];
+}
+
 // -- Top-level app state ------------------------------------------------------
 
 export interface AppState {
@@ -139,4 +155,6 @@ export interface AppState {
    * declarations are keyed on (encounterId, roundNumber). Assigned by beginInitiativePhase.
    */
   encounterId?: string;
+  /** Latest remote Done taps; only meaningful while it matches the current segment. */
+  segmentDone?: SegmentDone;
 }

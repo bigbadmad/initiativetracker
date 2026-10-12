@@ -11,7 +11,8 @@ import {
 } from '../sync/session.ts';
 import { queueTotals, resetTotals, startDeclarationPolling, type DeclarationTarget } from '../sync/declarations.ts';
 import { createAutoLocker } from '../sync/autoLock.ts';
-import { applyDeclarations, getState, lockInitiative } from '../state.ts';
+import { startSegmentDonePolling } from '../sync/segmentDone.ts';
+import { applyDeclarations, applySegmentDone, getState, lockInitiative, type SegmentDoneTarget } from '../state.ts';
 import { el, btn, iconBtn } from './components.ts';
 import { dmIsMidEdit } from './editing.ts';
 
@@ -24,6 +25,7 @@ let busy = false;
 let bar: HTMLElement | null = null;
 let liveRegion: HTMLElement | null = null;
 let stopPolling: (() => void) | null = null;
+let stopDonePolling: (() => void) | null = null;
 let autoLock = loadAutoLock();
 
 function loadAutoLock(): boolean {
@@ -55,7 +57,21 @@ const autoLocker = createAutoLocker({
   },
 });
 
+/** The segment currently on screen, or null when combat is not running. */
+function segmentTarget(): SegmentDoneTarget | null {
+  const { phase, encounterId, roundNumber, currentSegment } = getState();
+  return phase === 'combat' && encounterId
+    ? { encounterId, round: roundNumber, segment: currentSegment }
+    : null;
+}
+
 function beginPolling(): void {
+  stopDonePolling?.();
+  stopDonePolling = startSegmentDonePolling({
+    getSession: () => dmSession,
+    getTarget: segmentTarget,
+    onResult: (target, result) => void applySegmentDone(target, result),
+  });
   stopPolling?.();
   stopPolling = startDeclarationPolling({
     getSession: () => dmSession,
@@ -71,6 +87,8 @@ function beginPolling(): void {
 function endPolling(): void {
   stopPolling?.();
   stopPolling = null;
+  stopDonePolling?.();
+  stopDonePolling = null;
   autoLocker.cancel();
   resetTotals();
 }

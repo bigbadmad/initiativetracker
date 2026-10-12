@@ -9,7 +9,14 @@ import {
   updateCombatant,
   updateCombatantSilent,
 } from '../state.ts';
-import { sortByInitiative, getCombatantsAtSegment, nextActiveSegment, maxInitiativeSegment } from '../combat.ts';
+import {
+  sortByInitiative,
+  getCombatantsAtSegment,
+  nextActiveSegment,
+  maxInitiativeSegment,
+  remotePlayersAllDone,
+  segmentDoneFor,
+} from '../combat.ts';
 import { el, iconBtn, faIcon } from './components.ts';
 
 // -- Render combat tracker -----------------------------------------------------
@@ -24,6 +31,8 @@ export function renderTracker(): HTMLElement {
 
   const maxSegment = maxInitiativeSegment(combatants);
   const actingNow = getCombatantsAtSegment(combatants, currentSegment, inSurprisePhase);
+  const marks = segmentDoneFor(state);
+  const handBack = remotePlayersAllDone(actingNow, marks);
 
   const root = el('div', { cls: 'screen tracker-screen' });
 
@@ -79,9 +88,28 @@ export function renderTracker(): HTMLElement {
   if (actingNow.length > 0) {
     const callout = el('div', { cls: 'acting-callout' });
     callout.appendChild(el('p', { cls: 'callout-label', text: `Segment ${currentSegment} - Acting` }));
+
+    // Remote players only: someone playing with dice at the table has no Done to wait for.
+    const seated = handBack.done.length + handBack.waitingOn.length;
+    if (seated > 0) {
+      callout.appendChild(
+        el('p', {
+          cls: ['callout-done-summary', handBack.ready ? 'is-ready' : ''],
+          text: handBack.ready
+            ? `All ${seated} online ${seated === 1 ? 'player is' : 'players are'} done`
+            : `${handBack.done.length} of ${seated} online players done`,
+        }),
+      );
+    }
+
     actingNow.forEach((c) => {
       const nameSpan = el('span', { cls: `callout-name type-${c.type}`, text: c.name });
       callout.appendChild(nameSpan);
+      if (handBack.done.some((d) => d.id === c.id)) {
+        callout.appendChild(el('span', { cls: 'chip chip-done', text: 'Done' }));
+      } else if (handBack.waitingOn.some((w) => w.id === c.id)) {
+        callout.appendChild(el('span', { cls: 'chip chip-waiting', text: 'Waiting' }));
+      }
 
       // Declared action label (weapon/spell name)
       const fallbackMod = c.modifiers.find(
@@ -169,12 +197,15 @@ export function renderTracker(): HTMLElement {
       setState({ currentSegment: nextSeg });
     });
     advanceBtn.dataset.advanceBtn = '1';
+    // A cue only: Next is never disabled, so a player who has wandered off cannot stall the table.
+    if (handBack.ready) advanceBtn.classList.add('is-ready');
     actions.appendChild(advanceBtn);
   } else {
     const roundBtn = iconBtn('fa-solid fa-forward-step', 'Next Round', 'btn btn-primary btn-advance', () => {
       startNewRound();
     });
     roundBtn.dataset.advanceBtn = '1';
+    if (handBack.ready) roundBtn.classList.add('is-ready');
     actions.appendChild(roundBtn);
   }
 
