@@ -12,14 +12,13 @@ import {
   subscribeToMyDeclarations,
   subscribeToView,
   type DeclarationInput,
-  type DoneReceipt,
   type MyDeclaration,
   type RosterEntry,
   type Seat,
 } from '../sync/session.ts';
 import { el, btn, labeledInput, mount, faIcon } from '../ui/components.ts';
 import { declareErrorMessage, declareStatus, declareStatusKey, type DeclareStatus } from './declare.ts';
-import { actStatus, actStatusKey, doneErrorMessage, type ActStatus } from './act.ts';
+import { actStatus, actStatusKey, doneErrorMessage, type ActStatus, type LocalDone } from './act.ts';
 
 const appEl = document.getElementById('app')!;
 const SAVED_KEY = 'adnd-tracker-player';
@@ -57,7 +56,7 @@ interface Live {
   /** The action last typed or submitted; pre-fills the form and survives reloads. */
   draft: DeclarationInput;
   /** This device's own Done tap, so the button flips at once rather than after the DM's next publish. */
-  tapped: DoneReceipt | null;
+  tapped: LocalDone | null;
   ui: LiveUi;
 }
 
@@ -405,12 +404,14 @@ function buildDoneButton(live: Live): HTMLElement {
   const doneBtn = btn('Done', 'btn btn-primary btn-start btn-done', () => void send());
 
   async function send(): Promise<void> {
-    if (sending) return;
+    // Read before the request: the receipt must name the character the tap was made as.
+    const characterId = live.seat.combatantId;
+    if (sending || characterId === null) return;
     sending = true;
     doneBtn.disabled = true;
     error.textContent = '';
     try {
-      live.tapped = await markSegmentDone(live.seat.sessionId);
+      live.tapped = { ...(await markSegmentDone(live.seat.sessionId)), combatantId: characterId };
     } catch (err) {
       error.textContent = doneErrorMessage(errorText(err));
       doneBtn.disabled = false;

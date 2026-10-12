@@ -189,7 +189,7 @@ describe('actStatus', () => {
     players: [],
     ...over,
   });
-  const receipt = { encounterId: 'e', round: 2, segment: 5 };
+  const receipt = { combatantId: 'p1', encounterId: 'e', round: 2, segment: 5 };
 
   it('offers Done to a player whose character is acting', () => {
     expect(actStatus(view(), 'p1', null).kind).toBe('act');
@@ -215,6 +215,24 @@ describe('actStatus', () => {
     expect(actStatus(view(), 'p1', { ...receipt, segment: 4 }).kind).toBe('act');
     expect(actStatus(view(), 'p1', { ...receipt, round: 1 }).kind).toBe('act');
     expect(actStatus(view(), 'p1', { ...receipt, encounterId: 'old' }).kind).toBe('act');
+  });
+
+  it('does not carry a tap over to a different character acting in the same segment', () => {
+    // Tapped Done as p1, then switched to p2 via the claim picker; both act on segment 5.
+    const both = view({}, [
+      { id: 'p1', name: 'Thorin', type: 'player', done: false },
+      { id: 'p2', name: 'Elf', type: 'player', done: false },
+    ]);
+    expect(actStatus(both, 'p1', receipt).kind).toBe('done');
+    expect(actStatus(both, 'p2', receipt).kind).toBe('act');
+  });
+
+  it('still shows a character as done when the DM\'s view says so, whoever tapped on this device', () => {
+    const both = view({}, [
+      { id: 'p1', name: 'Thorin', type: 'player', done: false },
+      { id: 'p2', name: 'Elf', type: 'player', done: true },
+    ]);
+    expect(actStatus(both, 'p2', receipt).kind).toBe('done');
   });
 
   it('keeps the button when only unrelated parts of the view change, but gives each segment a new one', () => {

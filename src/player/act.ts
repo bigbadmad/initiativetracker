@@ -9,15 +9,25 @@ export type ActStatus =
   | { kind: 'done' };
 
 /**
- * `tapped` is the receipt from this device's own Done tap. It makes the button flip at once instead of
- * waiting for the DM's next publish, and it only counts for the exact segment it was recorded for.
+ * A Done tap made on this device: the server's receipt plus the character it was made as. Players can
+ * switch characters, so the segment alone does not say who was marked done.
  */
-export function actStatus(view: PublicView | null, characterId: string | null, tapped: DoneReceipt | null): ActStatus {
+export interface LocalDone extends DoneReceipt {
+  combatantId: string;
+}
+
+/**
+ * `tapped` is the receipt from this device's own Done tap. It makes the button flip at once instead of
+ * waiting for the DM's next publish, and it only counts for the exact character and segment it was
+ * recorded for.
+ */
+export function actStatus(view: PublicView | null, characterId: string | null, tapped: LocalDone | null): ActStatus {
   if (!view || !characterId || view.phase !== 'combat') return { kind: 'none' };
   const me = view.acting.find((a) => a.id === characterId && a.type === 'player');
   if (!me) return { kind: 'none' };
   const tappedHere =
     tapped !== null &&
+    tapped.combatantId === characterId &&
     tapped.encounterId === view.encounterId &&
     tapped.round === view.roundNumber &&
     tapped.segment === view.currentSegment;
