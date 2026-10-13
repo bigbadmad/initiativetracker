@@ -17,7 +17,7 @@ import {
   type Seat,
 } from '../sync/session.ts';
 import { el, btn, labeledInput, mount, faIcon } from '../ui/components.ts';
-import { declareErrorMessage, declareStatus, declareStatusKey, type DeclareStatus } from './declare.ts';
+import { declareDefaults, declareErrorMessage, declareStatus, declareStatusKey, type DeclareStatus } from './declare.ts';
 import { actStatus, actStatusKey, doneErrorMessage, type ActStatus, type LocalDone } from './act.ts';
 
 const appEl = document.getElementById('app')!;
@@ -130,7 +130,7 @@ function stopListening(): void {
 // -- Join screen ---------------------------------------------------------------
 
 function renderJoin(error = ''): void {
-  const { root, body } = shell('Join a session');
+  const { root, body } = shell('Join the game');
   const prefill = new URLSearchParams(location.search).get('code') ?? loadSeat()?.code ?? '';
   const savedName = loadSeat()?.name ?? '';
 
@@ -308,14 +308,14 @@ function renderLive(live: Live): void {
   const myId = view?.players.some((p) => p.id === seat.combatantId) ? seat.combatantId : null;
   const me = view?.players.find((p) => p.id === myId);
 
-  if (me) ui.identity.replaceChildren(el('p', { cls: 'player-you', text: `Playing as ${me.name}` }));
+  if (me) ui.identity.replaceChildren(el('p', { cls: 'player-you', text: `${saved.name} - playing as ${me.name}` }));
   else if (view) ui.identity.replaceChildren(buildClaimPicker(live, view));
   else ui.identity.replaceChildren();
 
   renderDeclare(live, declareStatus(view, myId, live.declaration));
   ui.phase.replaceChildren(buildPhase(view, myId));
   renderAct(live, actStatus(view, myId, live.tapped));
-  ui.party.replaceChildren(...buildParty(view));
+  ui.party.replaceChildren(...buildParty(view, live.roster));
   ui.notice.textContent = live.notice;
 }
 
@@ -347,13 +347,16 @@ function buildPhase(view: PublicView | null, myId: string | null): HTMLElement {
   return box;
 }
 
-function buildParty(view: PublicView | null): HTMLElement[] {
+function buildParty(view: PublicView | null, roster: RosterEntry[]): HTMLElement[] {
   if (!view || view.players.length === 0) return [];
   const party = el('div', { cls: 'player-party' });
   party.appendChild(el('h3', { text: 'Party' }));
   view.players.forEach((p) => {
     const row = el('div', { cls: ['player-party-row', p.isActive ? '' : 'is-down'] });
     row.appendChild(el('span', { text: p.name }));
+    // Who is playing this character, from the roster the players are already allowed to read.
+    const playedBy = roster.find((r) => r.combatantId === p.id)?.name;
+    if (playedBy) row.appendChild(el('span', { cls: 'party-player', text: playedBy }));
     if (p.isHorsDeCombat) row.appendChild(el('span', { cls: 'chip', text: 'Hors de combat' }));
     party.appendChild(row);
   });
@@ -466,6 +469,8 @@ function buildDeclared(d: MyDeclaration): HTMLElement {
 }
 
 function buildDeclareForm(live: Live): HTMLElement {
+  const standing = live.view?.players.find((p) => p.id === live.seat.combatantId)?.action ?? null;
+  const start = declareDefaults(standing, live.draft);
   const form = el('div', { cls: 'player-declare' });
   form.appendChild(el('h3', { text: 'Declare your action' }));
 
@@ -474,15 +479,15 @@ function buildDeclareForm(live: Live): HTMLElement {
   const kindSelect = el('select', { attrs: { id: 'decl-kind', name: 'decl-kind' } });
   kindSelect.appendChild(el('option', { text: 'Weapon (speed factor)', attrs: { value: 'weapon_speed' } }));
   kindSelect.appendChild(el('option', { text: 'Spell (casting time)', attrs: { value: 'spell_casting' } }));
-  kindSelect.value = live.draft.kind;
+  kindSelect.value = start.kind;
   kindGroup.appendChild(kindSelect);
 
-  const labelGroup = labeledInput({ label: 'Action', id: 'decl-label', type: 'text', value: live.draft.label, placeholder: 'e.g. Long sword' });
+  const labelGroup = labeledInput({ label: 'Action', id: 'decl-label', type: 'text', value: start.label, placeholder: 'e.g. Long sword' });
   const labelInput = labelGroup.querySelector('input')!;
   labelInput.maxLength = 40;
   labelInput.autocomplete = 'off';
 
-  const valueGroup = labeledInput({ label: 'Speed / casting time', id: 'decl-value', type: 'number', value: String(live.draft.value), min: '0', max: '30' });
+  const valueGroup = labeledInput({ label: 'Speed / casting time', id: 'decl-value', type: 'number', value: String(start.value), min: '0', max: '30' });
   const valueInput = valueGroup.querySelector('input')!;
   valueInput.inputMode = 'numeric';
 

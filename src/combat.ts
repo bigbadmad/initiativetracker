@@ -185,6 +185,15 @@ export interface DeclaredAction {
 }
 
 /**
+ * The combatant's standing weapon or spell action as the DM set it up, or null if there is none.
+ * Dex reaction, haste and slow are deliberately not part of it: they stay DM-held.
+ */
+export function primaryAction(modifiers: Modifier[]): DeclaredAction | null {
+  const m = modifiers.find((x) => x.kind === 'weapon_speed' || x.kind === 'spell_casting');
+  return m ? { kind: m.kind as DeclaredKind, label: m.label, value: m.value } : null;
+}
+
+/**
  * Replace the combatant's primary weapon/spell modifier with a declared action, leaving the
  * standing modifiers (dex reaction, haste, slow) untouched - those belong to the DM, so a player
  * can never declare their own haste. Mirrors the per-round action form on the initiative screen.
