@@ -76,7 +76,7 @@ export function toPublicView(state: Readonly<AppState>): PublicView {
         isActive: c.isActive,
         isHorsDeCombat: c.isHorsDeCombat,
         isSurprised: c.isSurprised,
-        action: primaryAction(c.modifiers),
+        action: primaryAction(c.modifiers, c.action),
       }),
     );
 

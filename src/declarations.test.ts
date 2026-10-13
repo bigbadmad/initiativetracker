@@ -13,7 +13,14 @@ import {
   updateCombatant,
 } from './state.ts';
 import { toPlayerTotals, toPublicView } from './sync/publicView.ts';
-import { declareDefaults, declareErrorMessage, declareStatus, declareStatusKey } from './player/declare.ts';
+import {
+  declareDefaults,
+  declareErrorMessage,
+  declareStatus,
+  declareStatusKey,
+  shouldAdoptStanding,
+} from './player/declare.ts';
+import { rosterKey } from './player/roster.ts';
 import type { PublicView } from './sync/publicView.ts';
 import type { MyDeclaration } from './sync/session.ts';
 import type { Combatant, Modifier } from './types.ts';
@@ -310,6 +317,41 @@ describe('declareDefaults', () => {
   it('trims a label longer than the server allows', () => {
     const out = declareDefaults({ kind: 'weapon_speed', label: 'x'.repeat(60), value: 5 }, draft);
     expect(out.label).toHaveLength(40);
+  });
+});
+
+describe('shouldAdoptStanding', () => {
+  const applied = { kind: 'weapon_speed' as const, label: 'Long sword', value: 3 };
+
+  it('adopts a change the DM makes while the form is untouched', () => {
+    expect(shouldAdoptStanding(applied, { ...applied, value: 6 }, false)).toBe(true);
+    expect(shouldAdoptStanding(applied, { ...applied, label: 'Battle axe' }, false)).toBe(true);
+    expect(shouldAdoptStanding(applied, { ...applied, kind: 'spell_casting' }, false)).toBe(true);
+  });
+
+  it('leaves the form alone once the player has touched it', () => {
+    expect(shouldAdoptStanding(applied, { ...applied, value: 6 }, true)).toBe(false);
+  });
+
+  it('does nothing when nothing changed, so an unrelated DM update never rewrites the inputs', () => {
+    expect(shouldAdoptStanding(applied, { ...applied }, false)).toBe(false);
+  });
+});
+
+describe('rosterKey', () => {
+  const a = { id: 's1', name: 'Keith', combatantId: 'c1' };
+  const b = { id: 's2', name: 'Sam', combatantId: null };
+
+  it('ignores the order the rows come back in', () => {
+    expect(rosterKey([a, b])).toBe(rosterKey([b, a]));
+  });
+
+  it('changes when someone claims, switches, leaves or joins', () => {
+    const base = rosterKey([a, b]);
+    expect(rosterKey([a, { ...b, combatantId: 'c2' }])).not.toBe(base); // claim
+    expect(rosterKey([{ ...a, combatantId: 'c3' }, b])).not.toBe(base); // switch
+    expect(rosterKey([a])).not.toBe(base); // leave
+    expect(rosterKey([a, b, { id: 's3', name: 'Alex', combatantId: null }])).not.toBe(base); // join
   });
 });
 

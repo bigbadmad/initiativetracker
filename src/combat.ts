@@ -187,10 +187,16 @@ export interface DeclaredAction {
 /**
  * The combatant's standing weapon or spell action as the DM set it up, or null if there is none.
  * Dex reaction, haste and slow are deliberately not part of it: they stay DM-held.
+ *
+ * `actionLabel` is the combatant's free-text action (`Combatant.action`). The DM can rename an action
+ * without touching its speed, which writes only that field, and the tracker already prefers it over
+ * the modifier's own label; the effective label here follows the same rule so players see what the
+ * DM sees.
  */
-export function primaryAction(modifiers: Modifier[]): DeclaredAction | null {
+export function primaryAction(modifiers: Modifier[], actionLabel = ''): DeclaredAction | null {
   const m = modifiers.find((x) => x.kind === 'weapon_speed' || x.kind === 'spell_casting');
-  return m ? { kind: m.kind as DeclaredKind, label: m.label, value: m.value } : null;
+  if (!m) return null;
+  return { kind: m.kind as DeclaredKind, label: actionLabel.trim() || m.label, value: m.value };
 }
 
 /**
