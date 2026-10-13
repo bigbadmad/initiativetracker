@@ -80,6 +80,44 @@ describe('toPublicView', () => {
     ]);
   });
 
+  it('carries a player\'s weapon or spell so their declare form can start from it', () => {
+    const fighter = makeCombatant({
+      id: 'p3',
+      name: 'Fighter',
+      modifiers: [{ id: 'w', kind: 'weapon_speed', value: 3, label: 'Long sword' }],
+    });
+    const mage = makeCombatant({
+      id: 'p4',
+      name: 'Mage',
+      modifiers: [{ id: 's', kind: 'spell_casting', value: 4, label: 'Magic missile' }],
+    });
+    const none = makeCombatant({ id: 'p5', name: 'Cleric' });
+    const view = toPublicView(makeState([fighter, mage, none]));
+    expect(view.players.map((p) => p.action)).toEqual([
+      { kind: 'weapon_speed', label: 'Long sword', value: 3 },
+      { kind: 'spell_casting', label: 'Magic missile', value: 4 },
+      null,
+    ]);
+  });
+
+  it('never publishes dex, haste or slow, even though they sit beside the weapon', () => {
+    const rogue = makeCombatant({
+      id: 'p6',
+      name: 'Rogue',
+      modifiers: [
+        { id: 'w', kind: 'weapon_speed', value: 2, label: 'Dagger' },
+        { id: 'd', kind: 'dex_reaction', value: -3, label: 'Dex 18' },
+        { id: 'h', kind: 'haste', value: 0, label: 'Hasted' },
+        { id: 's', kind: 'slow', value: 0, label: 'Slowed' },
+      ],
+    });
+    const json = JSON.stringify(toPublicView(makeState([rogue])));
+    for (const hidden of ['Dex 18', 'Hasted', 'Slowed', 'dex_reaction', '"haste"', '"slow"', '-3']) {
+      expect(json).not.toContain(hidden);
+    }
+    expect(json).toContain('Dagger');
+  });
+
   it('leaks no private monster or initiative data', () => {
     const json = JSON.stringify(toPublicView(makeState([thorin, orc, goblin])));
     for (const secret of ['maxHp', 'currentHp', 'thac0', 'damage', 'targetId', 'Q×3', 'lairTreasure', 'manualXP', 'totalInitiative', 'd10Roll', 'pendingLoot', 'sessionLoot', '"ac"']) {

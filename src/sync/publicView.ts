@@ -1,5 +1,5 @@
 import type { AppPhase, AppState } from '../types.ts';
-import { getCombatantsAtSegment, segmentDoneFor } from '../combat.ts';
+import { getCombatantsAtSegment, primaryAction, segmentDoneFor, type DeclaredAction } from '../combat.ts';
 
 export interface PublicActor {
   id: string;
@@ -17,6 +17,12 @@ export interface PublicPlayer {
   isHorsDeCombat: boolean;
   /** Only matters during the surprise phase; the server uses it to refuse a declaration. */
   isSurprised: boolean;
+  /**
+   * The weapon or spell the DM set up for this character, so the player's declare form starts from it
+   * rather than a generic default. It is the party's own gear, but it is in the shared view, so every
+   * player can read every party member's - dex, haste and slow are never included.
+   */
+  action: DeclaredAction | null;
 }
 
 /** Everything players are allowed to see. Built field-by-field so new Combatant fields never leak by default. */
@@ -70,6 +76,7 @@ export function toPublicView(state: Readonly<AppState>): PublicView {
         isActive: c.isActive,
         isHorsDeCombat: c.isHorsDeCombat,
         isSurprised: c.isSurprised,
+        action: primaryAction(c.modifiers),
       }),
     );
 

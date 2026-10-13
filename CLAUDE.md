@@ -146,6 +146,7 @@ Lower total acts first. Ties = simultaneous. Surprised combatants get sentinel 9
 ### Principles
 - **The DM client is authoritative.** Full `AppState` (monster HP, AC, loot, targets) stays in the DM's browser. Nothing private is synced.
 - **Players see only `toPublicView(state)`**, which is built field by field so a new `Combatant` field never leaks by default. `publicView.test.ts` fails if a private field appears in the serialised view. Keep it that way when adding to `PublicView`.
+  The one deliberate exception to "players see only their own": `PublicPlayer.action` carries each character's standing weapon/spell (kind, label, speed) so a declare form starts from what the DM set up. Dex reaction, haste and slow are never included, and a test enforces that.
 - **Players never write tables.** Every player action is a `security definer` RPC that checks membership and the DM's published view. Clients have no insert/update/delete grants.
 - **Sync is optional.** `syncAvailable` is false without env vars; the DM session bar is not mounted and `play.html` says online play is not configured.
 - **The d10 is rolled by the server.** The DM client folds a declaration into state with the same `calcInitiative` the offline flow uses. Players can declare only weapon speed or casting time; dex, haste and slow stay DM-held.

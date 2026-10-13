@@ -13,7 +13,7 @@ import {
   updateCombatant,
 } from './state.ts';
 import { toPlayerTotals, toPublicView } from './sync/publicView.ts';
-import { declareErrorMessage, declareStatus, declareStatusKey } from './player/declare.ts';
+import { declareDefaults, declareErrorMessage, declareStatus, declareStatusKey } from './player/declare.ts';
 import type { PublicView } from './sync/publicView.ts';
 import type { MyDeclaration } from './sync/session.ts';
 import type { Combatant, Modifier } from './types.ts';
@@ -283,8 +283,38 @@ describe('public view for declarations', () => {
 
 // -- player declare panel ------------------------------------------------------
 
+describe('declareDefaults', () => {
+  const draft = { kind: 'weapon_speed' as const, label: '', value: 5 };
+
+  it('starts from the weapon the DM set up, not the generic default', () => {
+    const out = declareDefaults({ kind: 'weapon_speed', label: 'Long sword', value: 3 }, draft);
+    expect(out).toEqual({ kind: 'weapon_speed', label: 'Long sword', value: 3 });
+  });
+
+  it('follows a spell too', () => {
+    const out = declareDefaults({ kind: 'spell_casting', label: 'Fireball', value: 3 }, draft);
+    expect(out.kind).toBe('spell_casting');
+  });
+
+  it('falls back to the remembered draft only when the DM set nothing up', () => {
+    const remembered = { kind: 'spell_casting' as const, label: 'Bless', value: 1 };
+    expect(declareDefaults(null, remembered)).toEqual(remembered);
+  });
+
+  it('keeps the value inside what the server accepts', () => {
+    expect(declareDefaults({ kind: 'weapon_speed', label: 'x', value: 99 }, draft).value).toBe(30);
+    expect(declareDefaults({ kind: 'weapon_speed', label: 'x', value: -4 }, draft).value).toBe(0);
+    expect(declareDefaults({ kind: 'weapon_speed', label: 'x', value: 4.7 }, draft).value).toBe(4);
+  });
+
+  it('trims a label longer than the server allows', () => {
+    const out = declareDefaults({ kind: 'weapon_speed', label: 'x'.repeat(60), value: 5 }, draft);
+    expect(out.label).toHaveLength(40);
+  });
+});
+
 describe('declareStatus', () => {
-  const player = { id: 'p1', name: 'Thorin', hasDeclared: false, isActive: true, isHorsDeCombat: false, isSurprised: false };
+  const player = { id: 'p1', name: 'Thorin', hasDeclared: false, isActive: true, isHorsDeCombat: false, isSurprised: false, action: null };
   const view = (over: Partial<PublicView> = {}, p: Partial<typeof player> = {}): PublicView => ({
     phase: 'initiative',
     encounterId: 'enc-1',

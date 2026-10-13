@@ -1,5 +1,5 @@
 import type { PublicView } from '../sync/publicView.ts';
-import type { MyDeclaration } from '../sync/session.ts';
+import type { DeclarationInput, MyDeclaration } from '../sync/session.ts';
 
 /** What the declaration area of the player screen should show. */
 export type DeclareStatus =
@@ -9,6 +9,20 @@ export type DeclareStatus =
   /** The DM entered this character's roll themselves (physical dice), so there is nothing to declare. */
   | { kind: 'dm-entered' }
   | { kind: 'declared'; declaration: MyDeclaration };
+
+/**
+ * What the declare form starts with. The DM's standing action for the character wins, because after a
+ * declaration is applied it IS the player's last choice, and it also reflects anything the DM has
+ * changed since. The remembered draft only fills in when the DM has set nothing up.
+ */
+export function declareDefaults(standing: DeclarationInput | null, draft: DeclarationInput): DeclarationInput {
+  if (!standing) return draft;
+  return {
+    kind: standing.kind,
+    label: standing.label.slice(0, 40),
+    value: Math.min(30, Math.max(0, Math.trunc(standing.value))),
+  };
+}
 
 export function declarationIsCurrent(view: PublicView, declaration: MyDeclaration | null): declaration is MyDeclaration {
   return declaration !== null && declaration.encounterId === view.encounterId && declaration.round === view.roundNumber;
