@@ -100,6 +100,29 @@ describe('toPublicView', () => {
     ]);
   });
 
+  it('publishes the label the DM sees: a renamed action wins over the modifier\'s own label', () => {
+    const renamed = makeCombatant({
+      id: 'p7',
+      name: 'Fighter',
+      action: 'Battle axe',
+      modifiers: [{ id: 'w', kind: 'weapon_speed', value: 7, label: 'Long sword' }],
+    });
+    const untouched = makeCombatant({
+      id: 'p8',
+      name: 'Rogue',
+      action: '   ',
+      modifiers: [{ id: 'd', kind: 'weapon_speed', value: 2, label: 'Dagger' }],
+    });
+    const view = toPublicView(makeState([renamed, untouched]));
+    expect(view.players[0].action).toEqual({ kind: 'weapon_speed', label: 'Battle axe', value: 7 });
+    expect(view.players[1].action).toEqual({ kind: 'weapon_speed', label: 'Dagger', value: 2 });
+  });
+
+  it('publishes no action for a free-text label alone, since it has no speed to start from', () => {
+    const labelOnly = makeCombatant({ id: 'p9', name: 'Monk', action: 'Quarterstaff' });
+    expect(toPublicView(makeState([labelOnly])).players[0].action).toBeNull();
+  });
+
   it('never publishes dex, haste or slow, even though they sit beside the weapon', () => {
     const rogue = makeCombatant({
       id: 'p6',

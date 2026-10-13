@@ -24,6 +24,19 @@ export function declareDefaults(standing: DeclarationInput | null, draft: Declar
   };
 }
 
+/**
+ * Whether a changed standing action should overwrite a declare form that is already open. Only an
+ * untouched form follows the DM: once the player has typed anything, their entry is theirs.
+ */
+export function shouldAdoptStanding(
+  applied: DeclarationInput,
+  next: DeclarationInput,
+  touched: boolean,
+): boolean {
+  if (touched) return false;
+  return applied.kind !== next.kind || applied.label !== next.label || applied.value !== next.value;
+}
+
 export function declarationIsCurrent(view: PublicView, declaration: MyDeclaration | null): declaration is MyDeclaration {
   return declaration !== null && declaration.encounterId === view.encounterId && declaration.round === view.roundNumber;
 }

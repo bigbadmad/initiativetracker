@@ -17,7 +17,15 @@ import {
   type Seat,
 } from '../sync/session.ts';
 import { el, btn, labeledInput, mount, faIcon } from '../ui/components.ts';
-import { declareDefaults, declareErrorMessage, declareStatus, declareStatusKey, type DeclareStatus } from './declare.ts';
+import {
+  declareDefaults,
+  declareErrorMessage,
+  declareStatus,
+  declareStatusKey,
+  shouldAdoptStanding,
+  type DeclareStatus,
+} from './declare.ts';
+import { ROSTER_POLL_MS, rosterKey } from './roster.ts';
 import { actStatus, actStatusKey, doneErrorMessage, type ActStatus, type LocalDone } from './act.ts';
 
 const appEl = document.getElementById('app')!;
@@ -43,6 +51,11 @@ interface LiveUi {
   /** The Done button area. Kept apart from `phase` so a DM update never rebuilds a button mid-tap. */
   act: HTMLElement;
   actKey: string | null;
+  /**
+   * Set while the declare form is open: re-reads the DM's standing action and adopts a change into the
+   * form only if the player has not touched it. Null whenever the declare region is not showing a form.
+   */
+  syncForm: (() => void) | null;
 }
 
 /** Everything the live screen renders from. */
@@ -180,6 +193,7 @@ async function enter(saved: SavedSeat): Promise<void> {
         () => leave('The DM ended the session.'),
       ),
       subscribeToMyDeclarations(seat.sessionId, () => void onDeclarationChange(live)),
+      watchRoster(live),
     ];
   } catch (err) {
     const message = errorText(err) || 'Could not join.';
@@ -202,6 +216,23 @@ async function onDeclarationChange(live: Live): Promise<void> {
   if (current !== live) return;
   await refreshDeclaration(live);
   renderLive(live);
+}
+
+/**
+ * Keep "who is playing whom" and the free-character list current. The roster is not on a realtime
+ * channel (that would take a database migration to add the table to the publication), and it changes
+ * rarely, so a light re-read is enough. Skipped while the tab is hidden; the screen is only redrawn
+ * when the seats actually changed. Returns the function that stops it.
+ */
+function watchRoster(live: Live): () => void {
+  const timer = setInterval(() => {
+    if (current !== live || document.hidden) return;
+    const before = rosterKey(live.roster);
+    void refreshRoster(live).then(() => {
+      if (current === live && rosterKey(live.roster) !== before) renderLive(live);
+    });
+  }, ROSTER_POLL_MS);
+  return () => clearInterval(timer);
 }
 
 async function refreshRoster(live: Live): Promise<void> {
@@ -281,6 +312,7 @@ function createLive(saved: SavedSeat, seat: Seat): Live {
     declareKey: null,
     act: el('div'),
     actKey: null,
+    syncForm: null,
   };
   const live: Live = { saved, seat, view: null, roster: [], notice: '', declaration: null, draft: loadDraft(), tapped: null, ui };
   body.append(
@@ -431,8 +463,13 @@ function buildDoneButton(live: Live): HTMLElement {
 
 function renderDeclare(live: Live, status: DeclareStatus): void {
   const key = declareStatusKey(status);
-  if (key === live.ui.declareKey) return;
+  if (key === live.ui.declareKey) {
+    // The same form stays on screen, but the DM may have changed what it should start from.
+    live.ui.syncForm?.();
+    return;
+  }
   live.ui.declareKey = key;
+  live.ui.syncForm = null;
 
   switch (status.kind) {
     case 'form':
@@ -468,9 +505,12 @@ function buildDeclared(d: MyDeclaration): HTMLElement {
   return box;
 }
 
+function standingAction(live: Live): DeclarationInput | null {
+  return live.view?.players.find((p) => p.id === live.seat.combatantId)?.action ?? null;
+}
+
 function buildDeclareForm(live: Live): HTMLElement {
-  const standing = live.view?.players.find((p) => p.id === live.seat.combatantId)?.action ?? null;
-  const start = declareDefaults(standing, live.draft);
+  const start = declareDefaults(standingAction(live), live.draft);
   const form = el('div', { cls: 'player-declare' });
   form.appendChild(el('h3', { text: 'Declare your action' }));
 
@@ -509,6 +549,23 @@ function buildDeclareForm(live: Live): HTMLElement {
     }
   };
   [kindSelect, labelInput, valueInput].forEach((control) => control.addEventListener('change', rememberDraft));
+
+  // Follow the DM while the form is untouched: if they correct this character's weapon or speed before
+  // the player has typed anything, the form takes the new values. After the first keystroke it is theirs.
+  let touched = false;
+  let applied = start;
+  [kindSelect, labelInput, valueInput].forEach((control) => {
+    control.addEventListener('input', () => { touched = true; });
+    control.addEventListener('change', () => { touched = true; });
+  });
+  live.ui.syncForm = () => {
+    const next = declareDefaults(standingAction(live), live.draft);
+    if (!shouldAdoptStanding(applied, next, touched)) return;
+    applied = next;
+    kindSelect.value = next.kind;
+    labelInput.value = next.label;
+    valueInput.value = String(next.value);
+  };
 
   async function submit(): Promise<void> {
     const input = readInput();
