@@ -65,13 +65,45 @@ function randomGem(): string {
 
 // -- Jewelry / art objects ----------------------------------------------------
 
-const JEWELRY_METAL  = ['Gold', 'Silver', 'Electrum', 'Platinum', 'Bronze', 'Brass'];
-const JEWELRY_TYPE   = ['ring', 'necklace', 'bracelet', 'brooch', 'earrings', 'amulet', 'crown', 'diadem', 'pin', 'armband'];
-const JEWELRY_DETAIL = ['set with pearls', 'engraved', 'with turquoise inlay', 'set with garnets', 'filigree work', 'enamelled', 'set with amethysts'];
+const JEWELRY_TYPE = ['ring', 'necklace', 'bracelet', 'brooch', 'earrings', 'amulet', 'crown', 'diadem', 'pin', 'armband'];
 
-function randomJewelry(): string {
-  const value = roll(3, 6) * 100;  // 3d6×100 gp
-  return `${pick(JEWELRY_METAL)} ${pick(JEWELRY_TYPE)} ${pick(JEWELRY_DETAIL)} (${value.toLocaleString()} gp)`;
+export interface JewelryTier {
+  /** Upper bound of this tier on a d100 roll; tiers are checked in order. */
+  upTo: number;
+  min: number;
+  max: number;
+  value: () => number;
+  materials: string[];
+  /** Empty string = no detail. */
+  details: string[];
+}
+
+/**
+ * The value band is rolled first and the description is built from that band, so the material always
+ * matches the price (a brass pin can never be worth more than 100 gp). Bands follow the shape of the DMG
+ * jewelry table but are weighted toward the cheap end so the average piece stays around 1,250 gp.
+ */
+export const JEWELRY_TIERS: JewelryTier[] = [
+  { upTo: 20,  min: 10,   max: 100,   value: () => roll(1, 10) * 10,   materials: ['Brass', 'Bronze', 'Copper'],      details: ['', 'polished', 'engraved', 'with glass beads'] },
+  { upTo: 40,  min: 100,  max: 1000,  value: () => roll(1, 10) * 100,  materials: ['Ivory', 'Wrought silver'],         details: ['', 'engraved', 'carved'] },
+  { upTo: 60,  min: 200,  max: 1200,  value: () => roll(2, 6) * 100,   materials: ['Silver and gold', 'Electrum'],    details: ['', 'engraved', 'filigree work'] },
+  { upTo: 75,  min: 300,  max: 1800,  value: () => roll(3, 6) * 100,   materials: ['Wrought gold'],                   details: ['', 'engraved', 'filigree work', 'enamelled'] },
+  { upTo: 85,  min: 500,  max: 3000,  value: () => roll(5, 6) * 100,   materials: ['Gold'],                           details: ['inlaid with jade', 'inlaid with coral', 'inlaid with ivory'] },
+  { upTo: 93,  min: 1000, max: 6000,  value: () => roll(1, 6) * 1000,  materials: ['Silver'],                         details: ['set with pearls', 'set with garnets', 'set with amethysts', 'set with turquoise'] },
+  { upTo: 98,  min: 2000, max: 8000,  value: () => roll(2, 4) * 1000,  materials: ['Gold'],                           details: ['set with pearls', 'set with emeralds', 'set with sapphires', 'set with rubies'] },
+  { upTo: 100, min: 2000, max: 12000, value: () => roll(2, 6) * 1000,  materials: ['Platinum'],                       details: ['set with diamonds', 'set with sapphires', 'set with rubies', 'set with emeralds'] },
+];
+
+export function jewelryFromTier(tier: JewelryTier): string {
+  const detail = pick(tier.details);
+  const description = [pick(tier.materials), pick(JEWELRY_TYPE), detail].filter(Boolean).join(' ');
+  // en-US so extractGP's comma-stripping parse works whatever the browser locale is.
+  return `${description} (${tier.value().toLocaleString('en-US')} gp)`;
+}
+
+export function randomJewelry(): string {
+  const r = d(100);
+  return jewelryFromTier(JEWELRY_TIERS.find((t) => r <= t.upTo) ?? JEWELRY_TIERS[JEWELRY_TIERS.length - 1]);
 }
 
 function pick<T>(arr: T[]): T {
